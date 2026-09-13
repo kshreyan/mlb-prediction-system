@@ -1,11 +1,11 @@
-"""Stacked ensemble: blend the simulation model, Elo-only, and
-pitcher-adjusted-Elo win probabilities on the LOG-ODDS scale, with weights
-learned via walk-forward logistic regression (never fit on a game before
-predicting it) — per the original spec's "calibrated stacked ensemble on
-log-odds" requirement. Reuses `mlb.models.moneyline.baselines.
-walk_forward_logistic_baseline`, since stacking on logits is just logistic
-regression whose inputs happen to be other models' logit-transformed
-probabilities instead of raw features.
+"""Stacked ensemble: blend an arbitrary set of moneyline win-probability
+models on the LOG-ODDS scale, with weights learned via walk-forward
+logistic regression (never fit on a game before predicting it) — per the
+original spec's "calibrated stacked ensemble on log-odds" requirement.
+Reuses `mlb.models.moneyline.baselines.walk_forward_logistic_baseline`,
+since stacking on logits is just logistic regression whose inputs happen
+to be other models' logit-transformed probabilities instead of raw
+features.
 """
 from __future__ import annotations
 
@@ -19,28 +19,22 @@ def logit(p: pd.Series | np.ndarray, eps: float = 1e-6) -> np.ndarray:
 
 
 def build_ensemble_frame(
-    sim_preds: pd.DataFrame,
-    elo_preds: pd.DataFrame,
-    pae_preds: pd.DataFrame,
+    base: pd.DataFrame,
+    components: dict[str, tuple[pd.DataFrame, str]],
 ) -> pd.DataFrame:
-    """Each input has (at least) game_pk, game_date, actual_home_win, and
-    its own probability column. Returns one row per game with
-    logit_sim/logit_elo/logit_pae features ready for
-    `walk_forward_logistic_baseline`.
+    """`base` provides game_pk, game_date, actual_home_win (typically the
+    simulation model's own predictions frame). `components` maps a short
+    name (e.g. "elo") to (that model's predictions dataframe, its
+    probability column name) — each merged in on game_pk (inner join, so a
+    game missing from any component is dropped from the ensemble entirely).
+    Returns one row per game with `logit_<name>` for every component.
     """
-    base = sim_preds[["game_pk", "game_date", "actual_home_win", "pred_home_win_prob"]].rename(
-        columns={"pred_home_win_prob": "p_sim"}
-    )
-    merged = base.merge(
-        elo_preds[["game_pk", "elo_pred_home_win_prob"]].rename(columns={"elo_pred_home_win_prob": "p_elo"}),
-        on="game_pk", how="inner",
-    )
-    merged = merged.merge(
-        pae_preds[["game_pk", "pred_prob"]].rename(columns={"pred_prob": "p_pae"}),
-        on="game_pk", how="inner",
-    )
-    merged["logit_sim"] = logit(merged["p_sim"])
-    merged["logit_elo"] = logit(merged["p_elo"])
-    merged["logit_pae"] = logit(merged["p_pae"])
+    merged = base[["game_pk", "game_date", "actual_home_win"]].copy()
+    for name, (df, prob_col) in components.items():
+        merged = merged.merge(
+            df[["game_pk", prob_col]].rename(columns={prob_col: f"p_{name}"}),
+            on="game_pk", how="inner",
+        )
+        merged[f"logit_{name}"] = logit(merged[f"p_{name}"])
     merged["game_date"] = pd.to_datetime(merged["game_date"])
     return merged

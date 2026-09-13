@@ -21,8 +21,31 @@ from mlb.features.build_dataset import build_game_features
 from mlb.park_weather.park_factors import load_or_compute_park_factors
 from mlb.lineups.statcast_pull import load_or_fetch_batter_data
 from mlb.lineups.projections import add_asof_batter_projections
-from mlb.lineups.lineup_offense import build_lineup_offense_features, derive_starter_hand_by_team_game
+from mlb.lineups.lineup_offense import build_lineup_offense_features, derive_starter_hand_by_team_game, compute_pa_weights_by_slot
 from mlb.park_weather.weather import load_or_fetch_weather, add_derived_weather_features
+
+
+def _pa_weights_from_prior_seasons(prior_seasons: list[int], raw_dir) -> dict[int, float] | None:
+    """Real, empirical plate-appearances-by-batting-slot weights, computed
+    ONLY from seasons strictly before the one being predicted (same
+    discipline as park factors) — falls back to None (equal-weighted) if
+    no prior seasons' data is available (e.g. building the earliest season
+    in scope)."""
+    if not prior_seasons:
+        return None
+    frames = []
+    for s in prior_seasons:
+        lineups_path = raw_dir / "lineups" / f"{s}.parquet"
+        batters_path = raw_dir / "batter_games" / f"{s}.parquet"
+        if not (lineups_path.exists() and batters_path.exists()):
+            continue
+        lineups = pd.read_parquet(lineups_path)
+        batters = pd.read_parquet(batters_path)
+        frames.append(lineups.merge(batters[["game_pk", "batter", "pa"]], on=["game_pk", "batter"], how="left"))
+    if not frames:
+        return None
+    combined = pd.concat(frames, ignore_index=True)
+    return combined.groupby("batting_order_slot")["pa"].mean().to_dict()
 
 
 def build_season(season: int, cfg, park_factor_seasons: list[int]) -> pd.DataFrame:
@@ -64,7 +87,8 @@ def build_season(season: int, cfg, park_factor_seasons: list[int]) -> pd.DataFra
         shrinkage_k=cfg.batter_projection.shrinkage_k_pa,
     )
     starter_hand = derive_starter_hand_by_team_game(starters)
-    lineup_off = build_lineup_offense_features(lineups, bproj, starter_hand)
+    pa_weights = _pa_weights_from_prior_seasons(park_factor_seasons, raw_dir)
+    lineup_off = build_lineup_offense_features(lineups, bproj, starter_hand, pa_weights_by_slot=pa_weights)
 
     game_pks = [int(x) for x in sched[sched["is_final"]]["game_pk"].tolist()]
     weather_raw = load_or_fetch_weather(season, game_pks, raw_dir)

@@ -88,6 +88,6 @@ FEATURE_COLUMNS = [
     "home_bullpen_proj_bullpen_xwoba_against", "away_bullpen_proj_bullpen_xwoba_against",
     "home_off_proj_runs_scored_per_game", "away_off_proj_runs_scored_per_game",
     "home_lineup_proj_xwoba", "away_lineup_proj_xwoba",
-    "home_bullpen_recent_pitches", "away_bullpen_recent_pitches",
-    "park_factor",
+    "home_bullpen_bullpen_recent_pitches", "away_bullpen_bullpen_recent_pitches",
+    "park_factor", "wind_effect", "temp_f_filled",
 ]

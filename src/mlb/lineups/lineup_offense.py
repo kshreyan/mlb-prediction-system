@@ -11,6 +11,23 @@ import pandas as pd
 _NEUTRAL_XWOBA_PRIOR = 0.31
 
 
+def compute_pa_weights_by_slot(lineups: pd.DataFrame, batter_games: pd.DataFrame) -> dict[int, float]:
+    """Empirical average plate-appearances-per-game by batting-order slot
+    (1-9), computed from real data — NOT invented. Real baseball structure:
+    a leadoff hitter genuinely bats more often per game than a #9 hitter,
+    since the order cycles and #1 comes up first most often. Used as fixed
+    weights for a PA-weighted lineup average instead of an unweighted mean
+    (previously every batter counted equally regardless of how often he'd
+    actually bat). Should be computed from seasons STRICTLY BEFORE the one
+    being predicted, matching every other prior in this pipeline (see
+    docs/limitations.md — this replaces the earlier equal-weighting
+    simplification).
+    """
+    merged = lineups.merge(batter_games[["game_pk", "batter", "pa"]], on=["game_pk", "batter"], how="left")
+    avg_pa = merged.groupby("batting_order_slot")["pa"].mean()
+    return avg_pa.to_dict()
+
+
 def derive_starter_hand_by_team_game(starters: pd.DataFrame) -> pd.DataFrame:
     """`starters` = pitcher_games rows where is_starter, with columns
     game_pk, pitching_team, home_team, away_team, p_throws. Returns
@@ -35,6 +52,7 @@ def build_lineup_offense_features(
     lineups: pd.DataFrame,
     batter_proj: pd.DataFrame,
     starter_hand_by_team_game: pd.DataFrame,
+    pa_weights_by_slot: dict[int, float] | None = None,
 ) -> pd.DataFrame:
     """
     lineups: game_pk, team, batting_order_slot, batter, stand
@@ -42,6 +60,10 @@ def build_lineup_offense_features(
     starter_hand_by_team_game: game_pk, team, opp_starter_p_throws — the hand
       of the pitcher THIS team's lineup faces in this game (i.e. keyed by the
       batting team, valued with the opposing starter's hand).
+    pa_weights_by_slot: optional {1: weight, ..., 9: weight} from
+      `compute_pa_weights_by_slot`, computed on PRIOR seasons only. If
+      omitted, falls back to an equal-weighted average (the original,
+      simpler behavior).
 
     Returns: game_pk, team, lineup_proj_xwoba, lineup_n_batters_matched
     """
@@ -61,9 +83,19 @@ def build_lineup_offense_features(
     # so a lineup's average isn't skewed by missing bench bats.
     merged["proj_xwoba_filled"] = merged["proj_xwoba"].fillna(_NEUTRAL_XWOBA_PRIOR)
 
-    out = merged.groupby(["game_pk", "team"]).agg(
-        lineup_proj_xwoba=("proj_xwoba_filled", "mean"),
+    if pa_weights_by_slot:
+        merged["_pa_weight"] = merged["batting_order_slot"].map(pa_weights_by_slot).fillna(
+            np.mean(list(pa_weights_by_slot.values()))
+        )
+    else:
+        merged["_pa_weight"] = 1.0
+
+    def _weighted_mean(g: pd.DataFrame) -> float:
+        return float(np.average(g["proj_xwoba_filled"], weights=g["_pa_weight"]))
+
+    out = merged.groupby(["game_pk", "team"]).apply(_weighted_mean, include_groups=False).rename("lineup_proj_xwoba").reset_index()
+    counts = merged.groupby(["game_pk", "team"]).agg(
         lineup_n_batters_matched=("proj_xwoba", lambda s: s.notna().sum()),
         lineup_size=("batter", "size"),
     ).reset_index()
-    return out
+    return out.merge(counts, on=["game_pk", "team"], how="left")

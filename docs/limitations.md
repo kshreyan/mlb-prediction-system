@@ -25,9 +25,15 @@ What's still missing:
   cases). But for TODAY's slate, that data doesn't exist yet in this build —
   you'd need to pull the Stats API's pre-game confirmed-lineup endpoint,
   which updates once lineups are posted. Not yet wired up.
-- **Batters are averaged equally across the lineup**, not weighted by
-  expected plate appearances (leadoff hitters bat more often than #9). A
-  PA-weighted average is a natural, cheap next improvement.
+- **RESOLVED: batters are now PA-weighted, not averaged equally.**
+  `compute_pa_weights_by_slot` computes real empirical plate-appearances
+  per batting-order slot from prior seasons only (leadoff hitters average
+  3.01 PA/game vs. 2.44 for the #9 hitter, from 2022-2023 data — a real,
+  stable structural fact about lineup construction, not invented). Effect
+  was small: essentially neutral on the standalone simulation model's
+  accuracy, with a modest calibration improvement on the final ensemble
+  (ECE 0.0072 → 0.0058). Kept for the honesty win even though the
+  performance win was modest.
 - **A batter not found for the exact opposing-hand split that game falls
   back to a flat neutral prior (0.31)** rather than a smarter estimate (e.g.
   from his overall, hand-agnostic history). Rare in practice (only ~0.4% of
@@ -119,10 +125,21 @@ It's resolved by NOT picking one model. `mlb.ensemble.stacking` blends the
 simulation model, Elo-only, and pitcher-adjusted Elo on log-odds via a
 walk-forward logistic regression (`scripts/run_ensemble.py`), and the
 result decisively beats every component on every metric: 56.0% accuracy,
-Brier 0.2448, log loss 0.6826, ECE 0.0072 (2-6x better calibrated than any
+Brier 0.2447, log loss 0.6825, ECE 0.0058 (2-8x better calibrated than any
 single component). See `README.md` §"Moneyline — stacked ensemble" for the
 full table and `tests/leakage/test_ensemble_leakage.py` for the leakage
 verification.
+
+**A 4th ensemble component was tried and rejected, honestly:** a
+gradient-boosted-trees model (`mlb.models.moneyline.gbm`) trained
+walk-forward directly on the matchup features — the "direct ML baseline"
+the original spec calls for. Standalone it was the weakest of all four
+components (54.3% accuracy, worst Brier/log loss/ECE of the group,
+plausibly because a modest few-thousand-game training set isn't enough for
+an unconstrained tree ensemble to beat the more structured models). Added
+as a 4th ensemble input, it made things worse, not better (55.3% accuracy
+vs. the 3-way ensemble's 56.0%, worse on every metric) — not included in
+the shipped ensemble.
 
 What's still open:
 
@@ -138,10 +155,10 @@ What's still open:
   ensemble is doing something wrong (the held-out walk-forward performance
   is what's actually reported and trusted). Worth a deeper look if the
   ensemble is extended further.
-- Remaining likely further gains: PA-weighted lineup averaging (§1), tuning
-  across more than two seasons (§9), and adding more diverse component
-  models to the ensemble (e.g. a gradient-boosted-trees baseline directly
-  on the matchup features, as the original spec suggested).
+- Remaining likely further gains: tuning across more than two seasons (§9),
+  a smarter fallback for batters missing an exact platoon-split match (§1),
+  and more diverse ensemble components beyond the GBM attempt above (e.g. a
+  hierarchical Bayesian pitcher/batter model).
 
 ## 9. Hyperparameter tuning: a failed single-season attempt, fixed by tuning across two seasons
 

@@ -20,7 +20,7 @@ true 2024 holdout — statistically tied with pitcher-adjusted Elo, still
 trailing it slightly on Brier/log loss. But a stacked ensemble (simulation
 + Elo-only + pitcher-adjusted-Elo, blended on log-odds, weights learned
 walk-forward) clearly beats every individual model on every metric: 56.0%
-accuracy, Brier 0.2448, log loss 0.6826, ECE 0.0072** — the best result on
+accuracy, Brier 0.2447, log loss 0.6825, ECE 0.0058** — the best result on
 every axis of any model in this build, and the first time this project has
 decisively beaten its strongest baseline rather than merely approaching it.
 See Results below for the full story, including two negative results along
@@ -43,7 +43,7 @@ worse, not better (so it isn't used).
   team's, or bullpen's projection for game N uses ONLY games strictly before
   game N, exponentially time-weighted and shrunk toward a same-date league
   prior that is ITSELF computed from only strictly-prior games. `tests/leakage/`
-  has 17 passing tests enforcing this, including two real bugs caught and
+  has 18 passing tests enforcing this, including two real bugs caught and
   fixed during this build (see "Leakage bugs found and fixed" below).
 - **Confirmed lineups are real, not a team-level proxy.** The actual
   starting lineup (9 batters, batting order) is derived directly from
@@ -90,7 +90,7 @@ src/mlb/
   backtest/        Walk-forward (expanding-window) backtest loop
   evaluation/      Brier/log-loss/ECE/reliability/totals-MAE metrics
 tests/
-  leakage/         The anti-leakage test suite (17 tests, all passing)
+  leakage/         The anti-leakage test suite (18 tests, all passing)
   unit/            Regression tests for real data artifacts found along the way
 scripts/
   build_features.py     Build one season's leak-free game-feature dataset
@@ -117,10 +117,14 @@ scripts/
    each game — no extra API calls. Each batter's xwOBA is projected
    separately vs. LHP and vs. RHP (platoon splits), same shrinkage
    machinery as pitchers (100-day halflife, k=100 PA, both tuned), then
-   averaged across the lineup against the actual opposing starter's hand
-   for that game. A team-level rolling-runs proxy (`mlb.features.team_offense`) is
-   kept as a secondary signal — the simulation's mean-runs model takes both
-   (see "Lineup ablation" below for why).
+   combined into a lineup-level projection using REAL empirical
+   plate-appearances-per-batting-slot weights (leadoff hitters bat more
+   often than #9 — computed from prior seasons only, not invented) rather
+   than a plain average, against the actual opposing starter's hand for
+   that game. A team-level rolling-runs proxy
+   (`mlb.features.team_offense`) is kept as a secondary signal — the
+   simulation's mean-runs model takes both (see "Lineup ablation" below for
+   why).
 4. **Park factors** (`mlb.park_weather.park_factors`): empirical, from real
    prior-season game logs (home run-scoring environment vs. that team's own
    road environment), never leaking the season being predicted.
@@ -274,13 +278,13 @@ Elo baseline alone, no games need to be dropped from 2024 for warm-up):
 
 | Model | Accuracy | Brier | Log loss | ECE |
 |---|---|---|---|---|
-| Simulation (component) | 54.8% | 0.2472 | 0.6875 | 0.025 |
+| Simulation (component) | 54.5% | 0.2471 | 0.6874 | 0.024 |
 | Elo-only (component) | 55.0% | 0.2483 | 0.6901 | 0.044 |
 | Pitcher-adjusted Elo (component) | 54.7% | 0.2455 | 0.6841 | 0.013 |
-| **Stacked ensemble** | **56.0%** | **0.2448** | **0.6826** | **0.0072** |
+| **Stacked ensemble** | **56.0%** | **0.2447** | **0.6825** | **0.0058** |
 
 **Honest read:** this is the best result anywhere in this build, on every
-metric simultaneously, including calibration (ECE 0.0072 is roughly 2-6x
+metric simultaneously, including calibration (ECE 0.0058 is roughly 2-8x
 better than any individual component). 56.0% accuracy is just short of the
 spec's realistic "great result" band (57-60%) and well clear of the
 "presumed leakage" zone above ~62% — a genuinely plausible, non-suspicious
@@ -297,6 +301,30 @@ than an independent driver, likely because it already overlaps heavily
 with the Elo term. The ensemble covers moneyline only — totals and run
 line still come from the simulation model alone (see below), since Elo/
 pitcher-adjusted-Elo have no run distribution to combine with.
+
+**Two further experiments, both tested honestly and reported regardless of
+outcome:**
+
+1. **PA-weighted lineup averaging** (`compute_pa_weights_by_slot`):
+   replaced the original equal-weighted lineup average with real, empirical
+   plate-appearances-per-batting-slot weights (leadoff hitters average 3.01
+   PA/game vs. 2.44 for the #9 hitter, computed from 2022-2023 data only —
+   never the season being predicted). Effect: essentially neutral on the
+   standalone simulation model (accuracy 54.7%→54.5%, Brier/log loss flat,
+   ECE improved 0.030→0.024) and on the ensemble (accuracy flat, Brier/log
+   loss marginally better, ECE improved 0.0072→0.0058). Kept — it replaces
+   a known simplification with real data at essentially no cost, even
+   though the win is modest.
+2. **A 4th ensemble component: gradient-boosted trees** directly on the
+   matchup features (`mlb.models.moneyline.gbm`, the "direct ML baseline"
+   the original spec calls for), walk-forward trained with conservative
+   hyperparameters. Standalone, it was the WEAKEST of all four components
+   (54.3% accuracy, worse Brier/log loss/ECE than sim, Elo, or
+   pitcher-adjusted-Elo) — unsurprising given its modest training-set size.
+   Added as a 4th ensemble input, it did not help: 55.3% accuracy vs. the
+   3-way ensemble's 56.0%, and worse on every other metric too. **Not
+   included in the shipped ensemble** — tested and rejected, not
+   silently dropped.
 
 ### Totals — final model
 
@@ -336,7 +364,7 @@ regression overfit on ~1,200 training games. We ship the raw probabilities.
 
 ## Leakage bugs found and fixed during this build
 
-`tests/leakage/` has 17 passing tests. Two real leakage bugs were caught by
+`tests/leakage/` has 18 passing tests. Two real leakage bugs were caught by
 the test suite before they could taint results, and are worth naming
 because they're the kind of subtle bug this whole architecture exists to
 prevent:
@@ -363,7 +391,7 @@ regression-tested in `tests/unit/test_schedule_dedup.py`).
 
 ```bash
 make setup                                   # venv + editable install
-make test                                    # full suite (17 tests)
+make test                                    # full suite (18 tests)
 make leakage-test                            # just the anti-leakage gate
 make features SEASON=2022                    # build one season's dataset (incl. lineups)
 make features SEASON=2023
@@ -378,7 +406,7 @@ python scripts/run_ensemble.py               # build + evaluate the stacked ense
 
 - [x] Full pipeline runs raw data → predictions (backtest form; live daily
       slate deployment is not yet built — see limitations).
-- [x] Walk-forward backtest, zero leakage (17 leakage tests passing,
+- [x] Walk-forward backtest, zero leakage (18 leakage tests passing,
       including 2 real bugs caught and fixed during this build).
 - [~] Predictions driven by starter + bullpen + confirmed lineups —
       **implemented and backtested** (actual lineups derived from
@@ -394,7 +422,7 @@ python scripts/run_ensemble.py               # build + evaluate the stacked ense
       beats home-field-always/better-record/Elo-only and is statistically
       tied with pitcher-adjusted Elo; the stacked ensemble decisively beats
       every baseline including pitcher-adjusted Elo on every metric**
-      (56.0% accuracy, Brier 0.2448, log loss 0.6826, ECE 0.0072 — see
+      (56.0% accuracy, Brier 0.2447, log loss 0.6825, ECE 0.0058 — see
       "Moneyline — stacked ensemble" above). Reported with the full honest
       path to get there, including a tuning attempt that initially failed
       to transfer and was fixed, not hidden.
@@ -406,13 +434,17 @@ python scripts/run_ensemble.py               # build + evaluate the stacked ense
 
 ## What's next (not done yet)
 
-See `docs/limitations.md` for the full list. In priority order: extending
-the stacked ensemble to run line and totals (currently moneyline-only —
-would need run/total-producing baselines to blend with, which none of
-Elo/pitcher-adjusted-Elo are), tuning across even more seasons (two
-validation seasons was enough to catch attempt 1's overfitting, but the
-spec's full nested time-series CV would use more), PA-weighted lineup
-averaging, live confirmed-lineup ingestion for daily predictions (vs.
+See `docs/limitations.md` for the full list. Two more levers were tried
+this session and are worth knowing didn't move the needle further: a 4th
+ensemble component (gradient-boosted trees on the matchup features) and
+PA-weighted lineup averaging (kept for its own honesty merits, but nearly
+neutral on performance) — see "Two further experiments" above. In priority
+order for what's left: extending the stacked ensemble to run line and
+totals (currently moneyline-only — would need run/total-producing
+baselines to blend with, which none of Elo/pitcher-adjusted-Elo are),
+tuning across even more seasons (two validation seasons was enough to catch
+attempt 1's overfitting, but the spec's full nested time-series CV would
+use more), live confirmed-lineup ingestion for daily predictions (vs.
 backtest-only actual lineups), extending the backtest across more seasons,
 an odds data source for CLV, and improving the run-line dispersion model
 for one-run games.
