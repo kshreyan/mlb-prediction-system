@@ -77,14 +77,14 @@ never invented") is intentionally more important than filling in this box.
 If you have an odds API key, wire it into `mlb.data` and this becomes
 straightforward to add.
 
-## 4. Backtest coverage: 2022-2024 (2024 evaluated), not the full 2015+ history
+## 4. Backtest coverage: 2021-2024 (2024 evaluated), not the full 2015+ history
 
 The walk-forward backtest in this build covers the full 2024 season
 (2,429 games, evaluated) and 2023 (2,430 games, also backtested — used both
 as 2024's training pool and, via its own 2022-warm-started walk-forward run,
-as ensemble/tuning validation data). 2022 was pulled in full (pitchers,
-batters/lineups, weather) specifically to support multi-season
-hyperparameter tuning and the ensemble's warm-up. Extending to 2015+ is
+as ensemble/tuning validation data). 2022 and 2021 were each pulled in full
+(pitchers, batters/lineups, weather) specifically to support multi-season
+hyperparameter tuning (§9) and the ensemble's warm-up. Extending to 2015+ is
 mechanical (`make features SEASON=<year>` for each year, then include
 earlier seasons in `--prior`), but was out of scope for the time budget of
 this build. Statcast data (the pitcher-peripheral foundation) only exists
@@ -115,9 +115,9 @@ from the Poisson simulation) blended with the simulation's own prediction.
 **Run line**: `mlb.models.runline.direct` is a logistic regression
 predicting P(home −1.5 covers) directly from the matchup features, blended
 with the simulation's run-line probability via the same log-odds stacking
-as moneyline. Result: Brier 0.2258→0.2238, log loss 0.6435→0.6393, ECE
-0.0132→0.0095 (best of all three: sim, direct, ensemble) — **adopted**.
-Raw accuracy dipped slightly (64.7%→64.6%), but accuracy is a weak metric
+as moneyline. Result: Brier 0.2256→0.2236, log loss 0.6431→0.6389, ECE
+0.0134→0.0083 (best of all three: sim, direct, ensemble) — **adopted**.
+Raw accuracy held roughly flat (64.7%→64.7%), but accuracy is a weak metric
 for this market specifically: home covers −1.5 only 35.3% of the time, so
 "always predict no-cover" alone would already score ~65% "accuracy" with
 zero skill. Brier/log loss/calibration are what matter here, consistent
@@ -152,15 +152,15 @@ the shipped output rather than the isotonic-recalibrated ones. See
 
 This was the single most important open finding through most of this
 build's history: the standalone simulation model, even after lineups,
-weather, and multi-season hyperparameter tuning, was only statistically
-tied with pitcher-adjusted Elo on accuracy (54.7% vs 54.8%) and still
-trailed it on Brier/log loss (0.2470/0.6872 vs 0.2466/0.6864).
+weather, and hyperparameter tuning, was statistically tied with (and later,
+after further tuning, ahead of on accuracy but still behind on Brier/log
+loss) pitcher-adjusted Elo.
 
 It's resolved by NOT picking one model. `mlb.ensemble.stacking` blends the
 simulation model, Elo-only, and pitcher-adjusted Elo on log-odds via a
 walk-forward logistic regression (`scripts/run_ensemble.py`), and the
-result decisively beats every component on every metric: 56.0% accuracy,
-Brier 0.2447, log loss 0.6825, ECE 0.0058 (2-8x better calibrated than any
+result decisively beats every component on every metric: 56.2% accuracy,
+Brier 0.2447, log loss 0.6825, ECE 0.0081 (1-5x better calibrated than any
 single component). See `README.md` §"Moneyline — stacked ensemble" for the
 full table and `tests/leakage/test_ensemble_leakage.py` for the leakage
 verification.
@@ -169,11 +169,11 @@ verification.
 gradient-boosted-trees model (`mlb.models.moneyline.gbm`) trained
 walk-forward directly on the matchup features — the "direct ML baseline"
 the original spec calls for. Standalone it was the weakest of all four
-components (54.3% accuracy, worst Brier/log loss/ECE of the group,
+components (55.0% accuracy, worst Brier/log loss/ECE of the group,
 plausibly because a modest few-thousand-game training set isn't enough for
 an unconstrained tree ensemble to beat the more structured models). Added
-as a 4th ensemble input, it made things worse, not better (55.3% accuracy
-vs. the 3-way ensemble's 56.0%, worse on every metric) — not included in
+as a 4th ensemble input, it made things worse, not better (55.5% accuracy
+vs. the 3-way ensemble's 56.2%, worse on every metric) — not included in
 the shipped ensemble.
 
 What's still open:
@@ -195,7 +195,7 @@ What's still open:
   and more diverse ensemble components beyond the GBM attempt above (e.g. a
   hierarchical Bayesian pitcher/batter model).
 
-## 9. Hyperparameter tuning: a failed single-season attempt, fixed by tuning across two seasons
+## 9. Hyperparameter tuning: three attempts, one failed, two confirmed each other
 
 `scripts/tune_hyperparams.py` runs a real, held-out coordinate-descent
 search. The FIRST attempt scored candidates by walk-forward log loss on a
@@ -213,11 +213,26 @@ touched), requiring improvement on both seasons individually, not just one
 average. This landed on a materially different, more conservative config
 (batter shrinkage-k reversed from 200 back down to 100; bullpen halflife
 20→35 days; team-offense halflife 30→50 days) and, applied to the 2024
-holdout, actually delivered: accuracy recovered to 54.7% (from 53.8%) and
-Brier/log loss improved further (0.2470/0.6872, vs. attempt 1's
-0.2473/0.6878). This is the config shipped in this build.
+holdout, actually delivered: accuracy recovered to 54.5% (from 53.8%) and
+Brier/log loss improved further (0.2471/0.6874, vs. attempt 1's
+0.2473/0.6878).
+
+The THIRD attempt added 2021 as a third validation season (pulling its
+full Statcast/lineup/weather data), starting the search from attempt 2's
+winner rather than from scratch. Pooled log loss improved further
+(0.6777→0.6772 across all 3 validation seasons), and every halflife that
+moved (pitcher 75→110 days, batter 100→140 days, team-offense 50→70 days)
+moved FURTHER IN THE SAME DIRECTION as attempt 2 rather than reversing —
+every other parameter (pitcher k, batter k, bullpen halflife/k,
+team-offense k) was confirmed unchanged. Applied to the 2024 holdout:
+accuracy improved again, to 55.4%, with Brier/log loss essentially flat
+(0.2471/0.6873). This is the config shipped in this build.
 
 The lesson worth keeping: on a system this noisy, tuning on one validation
-season was actively misleading, and two seasons was enough to catch and
-fix it. The original spec's full nested time-series CV (more seasons
-still) would be the natural further extension — not yet built.
+season was actively misleading (attempt 1), two seasons was enough to
+produce a result that actually transferred (attempt 2), and three seasons
+gave a further, consistent-direction refinement rather than another
+reversal (attempt 3) — increasing confidence that the current
+hyperparameters reflect a real, stable signal rather than noise. The
+original spec's full nested time-series CV (more seasons still) would be
+the natural further extension — not yet built.

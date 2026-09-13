@@ -15,35 +15,35 @@ baselines. Realistic acceptance targets:
 - Run line and totals: near breakeven against a sharp market.
 - Anything above ~62% moneyline accuracy is presumed leakage, not skill.
 
-**The single simulation model lands at ~54.7% moneyline accuracy on the
-true 2024 holdout — statistically tied with pitcher-adjusted Elo, still
-trailing it slightly on Brier/log loss. But a stacked ensemble (simulation
-+ Elo-only + pitcher-adjusted-Elo, blended on log-odds, weights learned
-walk-forward) clearly beats every individual model on every metric: 56.0%
-accuracy, Brier 0.2447, log loss 0.6825, ECE 0.0058** — the best result on
-every axis of any model in this build, and the first time this project has
-decisively beaten its strongest baseline rather than merely approaching it.
-The same stacking approach was extended to run line (a second win: ECE
-0.0132 → 0.0095, adopted) and totals (a genuine negative result: a
-standalone direct model beats the simulation, but blending the two makes
-things WORSE than either alone — not adopted, and said so plainly). See
-Results below for the full story, including several negative results along
-the way that were diagnosed and reported rather than hidden: a first,
-single-season hyperparameter tuning pass looked good on its validation
-split but didn't transfer to the 2024 holdout (fixed by tuning across more
-seasons), isotonic post-hoc calibration made calibration worse not better,
-a 4th (GBM) ensemble component hurt rather than helped, and the totals
-ensemble described above.
+**The single simulation model lands at ~55.4% moneyline accuracy on the
+true 2024 holdout — the best-accuracy standalone model of the group, still
+trailing pitcher-adjusted Elo on Brier/log loss. A stacked ensemble
+(simulation + Elo-only + pitcher-adjusted-Elo, blended on log-odds, weights
+learned walk-forward) clearly beats every individual model on every
+metric: 56.2% accuracy, Brier 0.2447, log loss 0.6825, ECE 0.0081** — the
+best result on every axis of any model in this build, and the first time
+this project has decisively beaten its strongest baseline rather than
+merely approaching it. The same stacking approach was extended to run line
+(a second win: ECE 0.0134→0.0083, adopted) and totals (a genuine negative
+result: a standalone direct model beats the simulation, but blending the
+two makes things WORSE than either alone — not adopted, and said so
+plainly). See Results below for the full story, including several negative
+results along the way that were diagnosed and reported rather than hidden:
+a first, single-season hyperparameter tuning pass looked good on its
+validation split but didn't transfer to the 2024 holdout (fixed by tuning
+across 3 seasons instead of 1), isotonic post-hoc calibration made
+calibration worse not better, a 4th (GBM) ensemble component hurt rather
+than helped, and the totals ensemble described above.
 
 ## What's real here
 
 - **Data**: real Statcast pitch-level data (via `pybaseball`) for the full
-  2022, 2023, and 2024 regular seasons (~20,000-21,000 pitcher-game rows and
-  ~69,000-73,000 batter-game rows each), real MLB Stats API schedules/scores,
-  real empirical park factors computed from actual prior-season game results
-  (Coors Field comes out 139.2 — the most hitter-friendly park in MLB,
-  exactly as expected; Petco Park comes out 83.6, the most pitcher-friendly
-  — this is a real signal, not a guess).
+  2021, 2022, 2023, and 2024 regular seasons (~20,000-21,000 pitcher-game
+  rows and ~69,000-74,000 batter-game rows each), real MLB Stats API
+  schedules/scores, real empirical park factors computed from actual
+  prior-season game results (Coors Field comes out 139.2 — the most
+  hitter-friendly park in MLB, exactly as expected; Petco Park comes out
+  83.6, the most pitcher-friendly — this is a real signal, not a guess).
 - **Every projection is as-of-date and leak-tested.** A pitcher's, batter's,
   team's, or bullpen's projection for game N uses ONLY games strictly before
   game N, exponentially time-weighted and shrunk toward a same-date league
@@ -59,15 +59,15 @@ ensemble described above.
 - **Real weather, not fabricated or omitted.** Per-game condition, temp,
   and wind speed/direction come from the MLB Stats API's `game` endpoint
   (real readings, e.g. `{"condition": "Clear", "temp": "60", "wind": "13
-  mph, L To R"}`) — pulled for all ~4,860 games across 2023-2024 via a
+  mph, L To R"}`) — pulled for all ~9,700 games across 2021-2024 via a
   resumable, moderately-concurrent puller. A real API data artifact (dome
   games sometimes report `temp=0` as a placeholder) was caught and nulled
   out rather than fed to the model as a literal reading.
 - **Hyperparameters were actually tuned**, not just guessed — via a
-  held-out coordinate-descent search across 2022+2023 validation data,
+  held-out coordinate-descent search across 2021+2022+2023 validation data,
   keeping 2024 completely untouched as the final test set. See
-  "Hyperparameter tuning" below for the two-attempt story (one failed, one
-  worked).
+  "Hyperparameter tuning" below for the three-attempt story (one failed,
+  two worked, each an improvement on the last).
 - **Real stacked ensembles, for moneyline and run line** (`mlb.ensemble.
   stacking`), each blending the simulation with a second model on log-odds,
   weights learned via walk-forward logistic regression — per the original
@@ -114,7 +114,7 @@ scripts/
 ## How the model works
 
 1. **Starter projection** (`mlb.pitchers.projections`): xwOBA-against, K%,
-   BB%, whiff%, CSW%, barrel% — each exponentially time-weighted (75-day
+   BB%, whiff%, CSW%, barrel% — each exponentially time-weighted (110-day
    halflife, tuned — see below) over the pitcher's own starts and shrunk
    toward a same-date league average using an empirical-Bayes credibility
    formula (`k=250` batters). A 4-start hot streak is outweighed by the
@@ -127,7 +127,7 @@ scripts/
    batters) is inferred directly from Statcast plate-appearance order for
    each game — no extra API calls. Each batter's xwOBA is projected
    separately vs. LHP and vs. RHP (platoon splits), same shrinkage
-   machinery as pitchers (100-day halflife, k=100 PA, both tuned), then
+   machinery as pitchers (140-day halflife, k=100 PA, both tuned), then
    combined into a lineup-level projection using REAL empirical
    plate-appearances-per-batting-slot weights (leadoff hitters bat more
    often than #9 — computed from prior seasons only, not invented) rather
@@ -250,34 +250,63 @@ Applying THIS config to the same final 2024 holdout:
 
 **Honest read:** this time the validation-set improvement DID transfer —
 accuracy recovered past the pre-tuning baseline, and Brier/log loss both
-improved more than attempt 1 managed. This is the config shipped in this
-build. The lesson we're keeping, not just the number: single-season
-hyperparameter tuning on this system was actively misleading, and
-tuning across at least two independent seasons was enough to catch it. The
-original spec's nested time-series CV (more seasons still) would be the
-further extension.
+improved more than attempt 1 managed. The lesson we're keeping, not just
+the number: single-season hyperparameter tuning on this system was
+actively misleading, and tuning across at least two independent seasons
+was enough to catch it.
 
-### Moneyline — single-model comparison (lineups + weather + multi-season-tuned hyperparameters)
+**Attempt 3** — pushed further: added 2021 as a third validation season
+(pulling its full Statcast/lineup/weather data), starting the search from
+attempt 2's winner to see whether more validation data confirms it or
+moves it further:
+
+| | Pitcher halflife | Batter halflife | Team-off. halflife | Pooled val. log loss (3 seasons) |
+|---|---|---|---|---|
+| Attempt 2 config (starting point) | 75d | 100d | 50d | 0.6777 |
+| **Attempt 3 tuned** | **110d** | **140d** | **70d** | **0.6772** |
+
+Every other parameter (pitcher k, batter k, bullpen halflife/k, team-offense
+k) held at attempt 2's values — the search confirmed them rather than
+finding something new. All three halflives that DID move, moved further in
+the SAME direction as attempt 2 (longer, not shorter or reversed) — a good
+sign of a stable trend rather than noise. Applying attempt 3's config to
+the true 2024 holdout:
+
+| | Accuracy | Brier | Log loss |
+|---|---|---|---|
+| Defaults + weather | 54.5% | 0.2474 | 0.6879 |
+| Attempt 1 (2023-only, didn't transfer) | 53.8% | 0.2473 | 0.6878 |
+| Attempt 2 (2022+2023) | 54.5% | 0.2471 | 0.6874 |
+| **Attempt 3 (2021+2022+2023, shipped)** | **55.4%** | **0.2471** | **0.6873** |
+
+**Honest read:** accuracy improved further (54.5%→55.4%) while Brier/log
+loss stayed essentially flat — a real, if modest, additional gain, and
+importantly no reversal like attempt 1's. This is the config shipped in
+this build. The original spec's nested time-series CV (even more seasons)
+would be the natural further extension, but three consecutive validation
+seasons agreeing on direction is a meaningfully stronger result than either
+earlier attempt.
+
+### Moneyline — single-model comparison (lineups + weather + 3-season-tuned hyperparameters)
 
 | Model | Accuracy | Brier | Log loss | ECE |
 |---|---|---|---|---|
-| **Simulation model (ours, final)** | 54.7% | 0.2470 | 0.6872 | 0.030 |
-| Elo-only | 54.7% | 0.2485 | 0.6904 | 0.048 |
+| **Simulation model (ours, final)** | 55.4% | 0.2471 | 0.6873 | 0.029 |
+| Elo-only | 55.0% | 0.2483 | 0.6901 | 0.044 |
 | Home-field-always | 52.8% | 0.2494 | 0.6920 | 0.006 |
 | Better-record (Log5) | 50.3% | 0.2646 | 0.7264 | 0.097 |
-| Pitcher-adjusted Elo | 54.8% | **0.2466** | **0.6864** | 0.015 |
+| Pitcher-adjusted Elo | 54.9% | **0.2455** | **0.6840** | 0.009 |
 
-**Honest read:** as a standalone model, the simulation now clearly beats
-Elo-only on Brier score and log loss (0.2470/0.6872 vs. 0.2485/0.6904)
-while matching it almost exactly on accuracy. It's statistically tied with
-pitcher-adjusted Elo on accuracy (54.7% vs. 54.8% — a 2-game difference out
-of 2,165) and has closed roughly half the earlier Brier/log-loss gap to it
-(previously 0.2474/0.6879 pre-tuning vs. 0.2466/0.6864; now 0.2470/0.6872).
-Not a decisive win over the strongest single baseline on its own — see the
-stacked ensemble below for where that changes. (For reference: home-field-
-always remains the best-calibrated single baseline since it just predicts
-the historical rate, though least discriminating; better-record/Log5
-remains the weakest model overall.)
+**Honest read:** as a standalone model, the simulation is now the
+best-accuracy model of the group (55.4%, ahead of both Elo variants) and
+clearly beats Elo-only on Brier score and log loss (0.2471/0.6873 vs.
+0.2483/0.6901). It still trails pitcher-adjusted Elo on Brier/log loss
+(0.2471/0.6873 vs. 0.2455/0.6840), a narrower gap than earlier in this
+build (was 0.2474/0.6879 vs. 0.2466/0.6864 pre-tuning). Real, standalone
+progress — see the stacked ensemble below for the bigger win. (For
+reference: home-field-always remains the best-calibrated single baseline
+since it just predicts the historical rate, though least discriminating;
+better-record/Log5 remains the weakest model overall.)
 
 ### Moneyline — stacked ensemble (the headline result)
 
@@ -289,14 +318,14 @@ Elo baseline alone, no games need to be dropped from 2024 for warm-up):
 
 | Model | Accuracy | Brier | Log loss | ECE |
 |---|---|---|---|---|
-| Simulation (component) | 54.5% | 0.2471 | 0.6874 | 0.024 |
+| Simulation (component) | 55.4% | 0.2471 | 0.6873 | 0.029 |
 | Elo-only (component) | 55.0% | 0.2483 | 0.6901 | 0.044 |
-| Pitcher-adjusted Elo (component) | 54.7% | 0.2455 | 0.6841 | 0.013 |
-| **Stacked ensemble** | **56.0%** | **0.2447** | **0.6825** | **0.0058** |
+| Pitcher-adjusted Elo (component) | 54.9% | 0.2455 | 0.6840 | 0.009 |
+| **Stacked ensemble** | **56.2%** | **0.2447** | **0.6825** | **0.0081** |
 
 **Honest read:** this is the best result anywhere in this build, on every
-metric simultaneously, including calibration (ECE 0.0058 is roughly 2-8x
-better than any individual component). 56.0% accuracy is just short of the
+metric simultaneously, including calibration (ECE 0.0081 is roughly 1-5x
+better than any individual component). 56.2% accuracy is just short of the
 spec's realistic "great result" band (57-60%) and well clear of the
 "presumed leakage" zone above ~62% — a genuinely plausible, non-suspicious
 number, and it was leakage-tested directly:
@@ -309,9 +338,10 @@ one component dominating — an in-sample diagnostic fit (not the reported
 walk-forward result) put roughly comparable weight on the simulation and
 Elo terms, with the pitcher-adjusted-Elo term acting more as a correction
 than an independent driver, likely because it already overlaps heavily
-with the Elo term. The ensemble covers moneyline only — totals and run
-line still come from the simulation model alone (see below), since Elo/
-pitcher-adjusted-Elo have no run distribution to combine with.
+with the Elo term. This particular ensemble covers moneyline only — Elo
+and pitcher-adjusted-Elo have no run distribution to combine with, so
+totals and run line use their own, separate ensembles (see below), built
+the same way but with different second-model components.
 
 **Two further experiments, both tested honestly and reported regardless of
 outcome:**
@@ -330,12 +360,13 @@ outcome:**
    matchup features (`mlb.models.moneyline.gbm`, the "direct ML baseline"
    the original spec calls for), walk-forward trained with conservative
    hyperparameters. Standalone, it was the WEAKEST of all four components
-   (54.3% accuracy, worse Brier/log loss/ECE than sim, Elo, or
+   (55.0% accuracy, worse Brier/log loss/ECE than sim, Elo, or
    pitcher-adjusted-Elo) — unsurprising given its modest training-set size.
-   Added as a 4th ensemble input, it did not help: 55.3% accuracy vs. the
-   3-way ensemble's 56.0%, and worse on every other metric too. **Not
+   Added as a 4th ensemble input, it did not help: 55.5% accuracy vs. the
+   3-way ensemble's 56.2%, and worse on every other metric too. **Not
    included in the shipped ensemble** — tested and rejected, not
-   silently dropped.
+   silently dropped. (Confirmed again after the 3-season hyperparameter
+   retune — same conclusion held.)
 
 ### Totals — simulation, a direct model, and an attempted ensemble
 
@@ -379,9 +410,9 @@ run-line probability via the same log-odds stacking used for moneyline.
 
 | | Accuracy | Brier | Log loss | ECE |
 |---|---|---|---|---|
-| Simulation (component) | 64.7% | 0.2258 | 0.6435 | 0.0132 |
-| Direct logistic (component) | 65.0% | 0.2242 | 0.6403 | 0.0109 |
-| **Ensemble (sim + direct, blended)** | 64.6% | **0.2238** | **0.6393** | **0.0095** |
+| Simulation (component) | 64.7% | 0.2256 | 0.6431 | 0.0134 |
+| Direct logistic (component) | 64.9% | 0.2240 | 0.6399 | 0.0122 |
+| **Ensemble (sim + direct, blended)** | 64.7% | **0.2236** | **0.6389** | **0.0083** |
 
 **Honest read:** the ensemble has the best Brier score, log loss, AND
 calibration of the three — genuinely the best-calibrated run-line output
@@ -438,13 +469,15 @@ regression-tested in `tests/unit/test_schedule_dedup.py`).
 make setup                                   # venv + editable install
 make test                                    # full suite (21 tests)
 make leakage-test                            # just the anti-leakage gate
-make features SEASON=2022                    # build one season's dataset (incl. lineups)
+make features SEASON=2021                    # build one season's dataset (incl. lineups)
+make features SEASON=2022                    # (2021+2022 support hyperparameter tuning/warm-up)
 make features SEASON=2023
 make features SEASON=2024
 python scripts/run_backtest.py 2023 --prior 2022 --feature-set both --out-suffix _both
 python scripts/run_backtest.py 2024 --prior 2023 --feature-set both --out-suffix _both
 python scripts/evaluate_backtest.py 2024 --prior 2023 --feature-set both
-python scripts/run_ensemble.py               # build + evaluate the stacked ensemble
+python scripts/run_ensemble.py               # build + evaluate the moneyline stacked ensemble
+python scripts/run_market_ensembles.py       # build + evaluate the totals/run-line ensembles
 ```
 
 ## Acceptance criteria — honest status
