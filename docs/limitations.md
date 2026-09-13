@@ -101,7 +101,42 @@ straightforward addition to the feature set.
 This is intentional (the spec calls for a jointly-consistent simulation
 rather than three separately-fit models), not a limitation — but it does
 mean an error in the run-environment mean model propagates to all three
-markets simultaneously rather than being independently correctable.
+markets simultaneously rather than being independently correctable. UPDATE:
+each market now ALSO has an independent second signal available
+(`mlb.models.total.direct`, `mlb.models.runline.direct`) for comparison and
+(for run line) blending — see §10 below.
+
+## 10. Extending stacking to run line (adopted) and totals (tried, rejected)
+
+Following the moneyline ensemble's success, the same approach was tried for
+the other two markets — a second, differently-shaped model (not derived
+from the Poisson simulation) blended with the simulation's own prediction.
+
+**Run line**: `mlb.models.runline.direct` is a logistic regression
+predicting P(home −1.5 covers) directly from the matchup features, blended
+with the simulation's run-line probability via the same log-odds stacking
+as moneyline. Result: Brier 0.2258→0.2238, log loss 0.6435→0.6393, ECE
+0.0132→0.0095 (best of all three: sim, direct, ensemble) — **adopted**.
+Raw accuracy dipped slightly (64.7%→64.6%), but accuracy is a weak metric
+for this market specifically: home covers −1.5 only 35.3% of the time, so
+"always predict no-cover" alone would already score ~65% "accuracy" with
+zero skill. Brier/log loss/calibration are what matter here, consistent
+with this project's whole selection philosophy, and all three improved.
+
+**Totals**: `mlb.models.total.direct` is a Ridge regression predicting the
+total directly from the matchup features. Standalone, it's the best single
+totals predictor in the build (MAE 3.414, beating both the simulation's
+3.428 and the naive baseline's 3.451) — a genuinely interesting finding in
+its own right, suggesting the simulation's Poisson-mean regression has
+room to improve. But blending it with the simulation via walk-forward
+Ridge-regularized linear stacking made things WORSE (MAE 3.454, worse than
+either component alone) — confirmed with regularization specifically to
+rule out simple meta-model overfitting as the cause. **Not adopted.** The
+simulation's own total remains the shipped output, both because it's not
+the worst option here and because it stays jointly consistent with
+moneyline and run line from one model (the direct Ridge model has no run
+distribution to offer those markets). The standalone Ridge result is kept
+as a concrete lead for improving the simulation's own mean-runs regression.
 
 ## 7. Isotonic recalibration did not help (an honest negative result)
 

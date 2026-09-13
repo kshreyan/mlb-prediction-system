@@ -23,12 +23,17 @@ walk-forward) clearly beats every individual model on every metric: 56.0%
 accuracy, Brier 0.2447, log loss 0.6825, ECE 0.0058** — the best result on
 every axis of any model in this build, and the first time this project has
 decisively beaten its strongest baseline rather than merely approaching it.
-See Results below for the full story, including two negative results along
-the way that were diagnosed and fixed rather than hidden: a first,
+The same stacking approach was extended to run line (a second win: ECE
+0.0132 → 0.0095, adopted) and totals (a genuine negative result: a
+standalone direct model beats the simulation, but blending the two makes
+things WORSE than either alone — not adopted, and said so plainly). See
+Results below for the full story, including several negative results along
+the way that were diagnosed and reported rather than hidden: a first,
 single-season hyperparameter tuning pass looked good on its validation
-split but didn't transfer to the 2024 holdout (fixed by tuning across two
-seasons instead of one), and isotonic post-hoc calibration made calibration
-worse, not better (so it isn't used).
+split but didn't transfer to the 2024 holdout (fixed by tuning across more
+seasons), isotonic post-hoc calibration made calibration worse not better,
+a 4th (GBM) ensemble component hurt rather than helped, and the totals
+ensemble described above.
 
 ## What's real here
 
@@ -43,7 +48,7 @@ worse, not better (so it isn't used).
   team's, or bullpen's projection for game N uses ONLY games strictly before
   game N, exponentially time-weighted and shrunk toward a same-date league
   prior that is ITSELF computed from only strictly-prior games. `tests/leakage/`
-  has 18 passing tests enforcing this, including two real bugs caught and
+  has 21 passing tests enforcing this, including two real bugs caught and
   fixed during this build (see "Leakage bugs found and fixed" below).
 - **Confirmed lineups are real, not a team-level proxy.** The actual
   starting lineup (9 batters, batting order) is derived directly from
@@ -63,11 +68,13 @@ worse, not better (so it isn't used).
   keeping 2024 completely untouched as the final test set. See
   "Hyperparameter tuning" below for the two-attempt story (one failed, one
   worked).
-- **A real stacked ensemble** (`mlb.ensemble.stacking`) blends the
-  simulation model with Elo-only and pitcher-adjusted-Elo on the log-odds
-  scale, with weights learned via walk-forward logistic regression — per
-  the original spec's requirement, not a hand-picked blend. This is the
-  best-performing model in the whole build (see Results).
+- **Real stacked ensembles, for moneyline and run line** (`mlb.ensemble.
+  stacking`), each blending the simulation with a second model on log-odds,
+  weights learned via walk-forward logistic regression — per the original
+  spec's requirement, not a hand-picked blend. Moneyline's is the
+  best-performing model in the whole build; run line's improves Brier/log
+  loss/calibration too. A totals ensemble was also tried and honestly
+  rejected — see Results.
 - **Nothing is fabricated.** No odds data exists in this build because we
   don't have a licensed/paid source — rather than approximate it, CLV is
   reported as unavailable. See `docs/limitations.md` §3.
@@ -84,20 +91,24 @@ src/mlb/
   features/        Team-offense proxy (fallback), as-of-date utilities, matchup dataset assembly
   park_weather/    Empirical park factors (real game logs, prior-seasons-only) + real per-game weather
   simulation/      Poisson-mean regression + NB dispersion, Monte Carlo game engine
-  models/moneyline/  Elo, pitcher-adjusted Elo, Log5, home-field baselines
-  ensemble/        Log-odds stacking of simulation + Elo + pitcher-adjusted Elo
+  models/moneyline/  Elo, pitcher-adjusted Elo, Log5, home-field baselines, GBM (tried, rejected)
+  models/total/    Direct Ridge regression on matchup features (2nd totals signal)
+  models/runline/  Direct logistic regression on matchup features (2nd run-line signal)
+  ensemble/        Log-odds stacking (moneyline, run line) + linear stacking (totals)
   calibration/     Isotonic post-hoc calibration (tested, not used — see Results)
   backtest/        Walk-forward (expanding-window) backtest loop
   evaluation/      Brier/log-loss/ECE/reliability/totals-MAE metrics
 tests/
-  leakage/         The anti-leakage test suite (18 tests, all passing)
+  leakage/         The anti-leakage test suite (21 tests, all passing)
   unit/            Regression tests for real data artifacts found along the way
 scripts/
   build_features.py     Build one season's leak-free game-feature dataset
   run_backtest.py        Walk-forward backtest one season
   evaluate_backtest.py    Produce the honest evaluation report
-  tune_hyperparams.py     Held-out coordinate-descent hyperparameter search (2022+2023)
-  run_ensemble.py         Build + evaluate the stacked ensemble
+  tune_hyperparams.py     Held-out coordinate-descent hyperparameter search (2021+2022+2023)
+  run_ensemble.py         Build + evaluate the moneyline stacked ensemble
+  run_market_ensembles.py Build + evaluate the totals and run-line ensembles
+  run_gbm_baseline.py     Generate the GBM baseline (moneyline 4th-component experiment)
 ```
 
 ## How the model works
@@ -326,34 +337,68 @@ outcome:**
    included in the shipped ensemble** — tested and rejected, not
    silently dropped.
 
-### Totals — final model
+### Totals — simulation, a direct model, and an attempted ensemble
+
+We tried extending the stacked-ensemble approach to totals: a second,
+differently-shaped signal (Ridge regression directly on the matchup
+features — `mlb.models.total.direct`) blended with the simulation's own
+total via walk-forward Ridge-regularized linear stacking
+(`mlb.ensemble.stacking.walk_forward_linear_stacking`).
 
 | | MAE | RMSE | Bias |
 |---|---|---|---|
-| **Simulation model (final)** | 3.429 | 4.371 | +0.183 |
 | Naive (as-of league-average total) | 3.451 | 4.355 | +0.083 |
+| Simulation model (component) | 3.428 | 4.368 | +0.183 |
+| **Direct Ridge regression (component)** | **3.414** | **4.297** | +0.264 |
+| Ensemble (sim + direct, blended) | 3.454 | 4.352 | +0.363 |
 
-**Honest read:** the totals model beats the naive league-average baseline
-on MAE (3.429 vs. 3.451), improving further from the weather-only version
-(3.434) with multi-season-tuned hyperparameters — a real, if modest, edge.
-RMSE and bias are still slightly worse than naive, so this isn't a clean
-sweep, but the direction is real: weather plus properly-tuned halflives
-each contributed a small, genuine improvement to totals.
+**Honest read — a genuine surprise, reported as found:** the standalone
+direct Ridge model is the BEST single totals predictor in this build,
+beating both the simulation and naive baseline on MAE. But blending it
+with the simulation made things WORSE than either alone (MAE 3.454, worse
+than both). This held even after regularizing the stacking regression
+(Ridge, not plain OLS) to rule out simple overfitting in the meta-model —
+with only 2 highly-correlated inputs and a weekly refit, stacking doesn't
+reliably beat the better of the two components. **We do not adopt the
+totals ensemble.** The simulation's own total remains the shipped output
+for two reasons beyond raw MAE: it stays jointly consistent with the
+moneyline and run-line predictions from one simulation (the direct Ridge
+model has no run distribution to offer run-line or moneyline), and per-game
+robustness matters more than a marginal average MAE gain for a system
+that reports probabilities, not just point estimates. The finding that a
+simple linear model on the same features currently outpredicts the
+Poisson-simulation's mean is nonetheless a concrete, honest target for
+improving the simulation's mean-runs regression itself.
 
-### Run line (±1.5, modeled as P(margin), not a variable spread)
+### Run line (±1.5) — simulation, a direct model, and a working ensemble
 
-| | Actual rate | Mean predicted |
-|---|---|---|
-| Home −1.5 covers (wins by 2+) | 35.3% | 34.8% |
-| One-run game | 27.8% | 19.6% |
+Same approach as totals, but this time it worked: a direct logistic
+regression (`mlb.models.runline.direct`) predicting P(home −1.5 covers)
+directly from the matchup features, blended with the simulation's own
+run-line probability via the same log-odds stacking used for moneyline.
 
-**Honest read:** the −1.5/+1.5 cover probability remains well-calibrated
-(35.3% vs. 34.8%). The model still meaningfully **underestimates** how
-often games are decided by exactly one run — the NB dispersion parameter
-(fit once, globally) doesn't fully capture the real fat-tailed frequency of
-close games, unchanged by this session's additions. Concrete target for
-next iteration: a per-team or run-environment-dependent dispersion instead
-of one global value.
+| | Accuracy | Brier | Log loss | ECE |
+|---|---|---|---|---|
+| Simulation (component) | 64.7% | 0.2258 | 0.6435 | 0.0132 |
+| Direct logistic (component) | 65.0% | 0.2242 | 0.6403 | 0.0109 |
+| **Ensemble (sim + direct, blended)** | 64.6% | **0.2238** | **0.6393** | **0.0095** |
+
+**Honest read:** the ensemble has the best Brier score, log loss, AND
+calibration of the three — genuinely the best-calibrated run-line output
+in this build — even though its raw accuracy is a hair lower than either
+component alone. Accuracy is a weak metric here regardless: home covers
+−1.5 only 35.3% of the time, so a trivial always-predict-no-cover baseline
+would already score ~65% "accuracy" without any skill — which is exactly
+why this project selects on log loss/Brier/calibration rather than
+accuracy, and why the ensemble is adopted here despite the accuracy dip.
+Actual home −1.5 cover rate: 35.3% vs. the ensemble's mean predicted 34.9%
+— well-calibrated in aggregate as well as per-bin.
+
+One-run-game frequency is still underestimated (actual 27.8% vs. simulated
+19.6%, unchanged by this session's work) — the NB dispersion parameter (fit
+once, globally) doesn't capture the real fat-tailed frequency of close
+games. Concrete target for next iteration: a per-team or
+run-environment-dependent dispersion instead of one global value.
 
 ### Isotonic calibration (tested, did not help)
 
@@ -364,7 +409,7 @@ regression overfit on ~1,200 training games. We ship the raw probabilities.
 
 ## Leakage bugs found and fixed during this build
 
-`tests/leakage/` has 18 passing tests. Two real leakage bugs were caught by
+`tests/leakage/` has 21 passing tests. Two real leakage bugs were caught by
 the test suite before they could taint results, and are worth naming
 because they're the kind of subtle bug this whole architecture exists to
 prevent:
@@ -391,7 +436,7 @@ regression-tested in `tests/unit/test_schedule_dedup.py`).
 
 ```bash
 make setup                                   # venv + editable install
-make test                                    # full suite (18 tests)
+make test                                    # full suite (21 tests)
 make leakage-test                            # just the anti-leakage gate
 make features SEASON=2022                    # build one season's dataset (incl. lineups)
 make features SEASON=2023
@@ -406,7 +451,7 @@ python scripts/run_ensemble.py               # build + evaluate the stacked ense
 
 - [x] Full pipeline runs raw data → predictions (backtest form; live daily
       slate deployment is not yet built — see limitations).
-- [x] Walk-forward backtest, zero leakage (18 leakage tests passing,
+- [x] Walk-forward backtest, zero leakage (21 leakage tests passing,
       including 2 real bugs caught and fixed during this build).
 - [~] Predictions driven by starter + bullpen + confirmed lineups —
       **implemented and backtested** (actual lineups derived from
@@ -415,7 +460,9 @@ python scripts/run_ensemble.py               # build + evaluate the stacked ense
       lineup endpoint rather than backtest-derived actual lineups. See
       limitations §1.
 - [x] Calibration (reliability + ECE) reported for all three markets.
-- [x] Run line modeled as P(margin), not a variable spread.
+- [x] Run line modeled as P(margin), not a variable spread — and, like
+      moneyline, improved via a stacked ensemble (simulation + a direct
+      logistic model), adopted after it improved Brier/log loss/ECE.
 - [ ] CLV vs. closing line — **not measured**, no free/licensed odds source
       available in this build. Reported as unavailable, not fabricated.
 - [x] Beats baselines out-of-sample — **the standalone simulation model

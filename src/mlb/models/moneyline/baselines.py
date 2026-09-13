@@ -68,12 +68,14 @@ def walk_forward_logistic_baseline(
     feature_cols: list[str],
     retrain_freq_days: int,
     min_training_games: int = 200,
+    label_col: str = "actual_home_win",
 ) -> pd.DataFrame:
     """Generic walk-forward logistic-regression baseline over arbitrary
     pre-computed feature columns (e.g. [elo_diff] for elo-only, or
     [elo_diff, diff_starter_xwoba, diff_bullpen_xwoba] for pitcher-adjusted
-    elo). Same expanding-window discipline as the main model."""
-    df = games_with_features.dropna(subset=feature_cols).sort_values("game_date").reset_index(drop=True)
+    elo; also reused for run-line stacking with a different `label_col`).
+    Same expanding-window discipline as the main model."""
+    df = games_with_features.dropna(subset=feature_cols + [label_col]).sort_values("game_date").reset_index(drop=True)
     start_date, end_date = df["game_date"].min(), df["game_date"].max()
 
     preds = np.full(len(df), np.nan)
@@ -89,7 +91,7 @@ def walk_forward_logistic_baseline(
             window_start = window_end + pd.Timedelta(days=1)
             continue
         X_train = df.loc[train_mask, feature_cols]
-        y_train = df.loc[train_mask, "actual_home_win"]
+        y_train = df.loc[train_mask, label_col]
         clf = LogisticRegression(max_iter=1000)
         clf.fit(X_train, y_train)
         X_test = df.loc[test_mask, feature_cols]
