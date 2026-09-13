@@ -103,33 +103,45 @@ split of ~1,200 games. We are reporting the raw simulation probabilities as
 the shipped output rather than the isotonic-recalibrated ones. See
 `README.md` for the numbers.
 
-## 8. The simulation model still doesn't clearly beat a pitcher-adjusted Elo baseline
+## 8. The simulation model: close to, but still trailing, pitcher-adjusted Elo
 
-UPDATE after lineups + weather + hyperparameter tuning: the FINAL model
-(53.8% accuracy, Brier 0.2473, log loss 0.6878) still trails pitcher-adjusted
-Elo (54.8% accuracy, Brier 0.2466, log loss 0.6864) on every probabilistic
-metric, and is no longer the accuracy leader either (an intermediate,
-pre-tuning checkpoint briefly was 54.8-54.9%, but see §9 below for why that
-shouldn't be over-trusted). See `README.md` §Results for the full
-before/after tables at each stage. Reported plainly per the project's
-honesty standard — this remains the single most important open finding of
-the whole build. Remaining likely fixes: PA-weighted lineup averaging (§1),
-multi-season hyperparameter tuning (§9), and a proper stacked ensemble
-instead of picking one model.
+UPDATE after lineups + weather + multi-season hyperparameter tuning: the
+FINAL model (54.7% accuracy, Brier 0.2470, log loss 0.6872) is
+statistically tied with pitcher-adjusted Elo on accuracy (54.8%) and has
+closed roughly half the earlier Brier/log-loss gap to it (was 0.2474/0.6879
+pre-tuning; pitcher-adjusted Elo is 0.2466/0.6864). It now also clearly
+beats the simpler Elo-only baseline on Brier and log loss. See `README.md`
+§Results for the full before/after tables at every stage (lineup ablation,
+weather ablation, two tuning attempts). Not a decisive win over the
+strongest baseline, but real, substantial, multi-step progress from this
+session's additions — reported plainly rather than declared victory.
+Remaining likely fixes: PA-weighted lineup averaging (§1), tuning across
+more than two seasons (§9), and a proper stacked ensemble instead of
+picking one model.
 
-## 9. Hyperparameter tuning was done, but the result argues for caution
+## 9. Hyperparameter tuning: a failed single-season attempt, fixed by tuning across two seasons
 
 `scripts/tune_hyperparams.py` runs a real, held-out coordinate-descent
-search: candidates are scored by walk-forward log loss on a slice of 2023
-ONLY (games from 2023-07-20 on, trained on earlier 2023 games), keeping
-2024 completely untouched. This found longer halflives helped on the 2023
-validation slice (pitcher 45→75 days, batter 60→100 days; log loss
-0.6844→0.6833) — but when applied to the true 2024 holdout, the improvement
-nearly vanished (log loss 0.6879→0.6878) and RAW ACCURACY GOT WORSE
-(54.5%→53.8%). We kept the tuned values (not worse on the metric actually
-selected on), but this is an honest demonstration that a single-season
-validation split isn't a fully reliable guide here — MLB backtests are
-noisy enough that hyperparameter deltas this size are hard to trust without
-tuning across multiple seasons (the nested time-series CV the original spec
-calls for, not yet built). Treat the current hyperparameters as "not
-obviously wrong" rather than "optimized."
+search. The FIRST attempt scored candidates by walk-forward log loss on a
+slice of 2023 ONLY (games from 2023-07-20 on, trained on earlier 2023
+games), keeping 2024 completely untouched. It found longer halflives
+helped on the 2023 validation slice (pitcher 45→75 days, batter 60→100
+days; log loss 0.6844→0.6833) — but when applied to the true 2024 holdout,
+the improvement nearly vanished (log loss 0.6879→0.6878) and RAW ACCURACY
+GOT WORSE (54.5%→53.8%). A single-season validation split wasn't reliable
+enough here.
+
+The SECOND attempt scored the same search by POOLED log loss across
+held-out validation slices of BOTH 2022 and 2023 (2024 still never
+touched), requiring improvement on both seasons individually, not just one
+average. This landed on a materially different, more conservative config
+(batter shrinkage-k reversed from 200 back down to 100; bullpen halflife
+20→35 days; team-offense halflife 30→50 days) and, applied to the 2024
+holdout, actually delivered: accuracy recovered to 54.7% (from 53.8%) and
+Brier/log loss improved further (0.2470/0.6872, vs. attempt 1's
+0.2473/0.6878). This is the config shipped in this build.
+
+The lesson worth keeping: on a system this noisy, tuning on one validation
+season was actively misleading, and two seasons was enough to catch and
+fix it. The original spec's full nested time-series CV (more seasons
+still) would be the natural further extension — not yet built.

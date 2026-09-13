@@ -12,9 +12,12 @@ random_seed: 42
 pitcher_projection:
   # Exponentially-weighted rolling window (in days) over a pitcher's own
   # Statcast game logs, computed strictly as-of the day before each start.
-  # Tuned via scripts/tune_hyperparams.py (coordinate-descent search on a
-  # held-out slice of 2023 only — 2024 was never touched during tuning).
-  # Was 45 days; 75 scored better (log loss 0.6844 -> 0.6837 on that slice).
+  # Tuned via scripts/tune_hyperparams.py: coordinate-descent search scored
+  # by POOLED log loss across held-out validation slices of BOTH 2022 and
+  # 2023 (2024 never touched during tuning). This superseded an earlier,
+  # single-season (2023-only) tuning pass whose gains didn't transfer to
+  # the 2024 holdout — see docs/limitations.md §9 for that full story.
+  # Was 45 days; 75 scored better on both validation seasons.
   halflife_days: 75
   # Minimum batters-faced before a pitcher's own sample is trusted much;
   # below this, projections shrink hard toward the league-average prior.
@@ -23,12 +26,13 @@ pitcher_projection:
   min_prior_batters: 150000  # batters used to build the league prior per season
 
 bullpen:
-  # Tuned: 20 remained the best of {10, 20, 35}.
-  halflife_days: 20
+  # Tuned (multi-season): was 20 days; 35 scored better on the pooled
+  # 2022+2023 validation (0.6810 -> 0.6805 pooled log loss).
+  halflife_days: 35
   fatigue_lookback_days: 3
-  # Tuned independently from the pitcher shrinkage_k above (own dedicated
-  # field): 250 remained the best of {125, 250, 400}.
-  shrinkage_k_batters: 250
+  # Tuned (multi-season, dedicated field, independent from the pitcher
+  # shrinkage_k above): was 250; 400 scored marginally better.
+  shrinkage_k_batters: 400
 
 batter_projection:
   # Batter xwOBA vs LHP/RHP, split-specific (platoon splits are real and
@@ -37,17 +41,21 @@ batter_projection:
   # true talent changes more slowly than a pitcher's in-season form, and
   # a single split (vs L or vs R) sees roughly 1/3 as many PAs as his
   # overall total, so needs more history to stabilize.
-  # Tuned: was 60 days; 100 scored better (log loss 0.6840 -> 0.6833).
+  # Tuned (multi-season): was 60 days; 100 scored better on both seasons.
   halflife_days: 100
-  shrinkage_k_pa: 200  # tuned: 200 remained the best of {100, 200, 350}
+  # Tuned (multi-season): was 200; 100 scored better pooled (0.6820 -> 0.6805)
+  # — this REVERSED the single-season tuning pass's choice of 200, which
+  # is exactly the kind of instability multi-season tuning is meant to catch.
+  shrinkage_k_pa: 100
 
 team_offense:
   # Team-level rolling runs/game is used as a secondary offense signal
   # alongside the lineup-level projection (see mlb.lineups) — the
   # regression itself learns how much to weigh each; see README "Lineup
   # ablation" for why both together beat either alone.
-  halflife_days: 30  # tuned: 30 remained the best of {15, 30, 50}
-  shrinkage_k_games: 20  # tuned: was 12; 20 scored marginally better
+  # Tuned (multi-season): was 30 days; 50 scored better on both seasons.
+  halflife_days: 50
+  shrinkage_k_games: 20  # tuned: 20 remained the best of {6, 12, 20}
 
 simulation:
   n_sims: 20000

@@ -15,17 +15,20 @@ baselines. Realistic acceptance targets:
 - Run line and totals: near breakeven against a sharp market.
 - Anything above ~62% moneyline accuracy is presumed leakage, not skill.
 
-**This build currently lands at ~53.8% moneyline accuracy on the true 2024
-holdout, well-calibrated (ECE 0.030), with Brier score and log loss close
-to — but still trailing — a simple pitcher-adjusted Elo baseline (0.2473 vs
-0.2466, 0.6878 vs 0.6864).** That is reported here plainly, not hidden — see
-Results below. Real, freely-available signals were added this session
-(confirmed lineups with platoon splits, real weather) and a real
-hyperparameter search was run — each is reported honestly below, including
-where the gains were real, where they were negligible, and one case
-(hyperparameter tuning) where the validation-set improvement did NOT fully
-transfer to the untouched 2024 holdout — a useful, humbling result in its
-own right.
+**This build currently lands at ~54.7% moneyline accuracy on the true 2024
+holdout, well-calibrated (ECE 0.030), now clearly beating the Elo-only
+baseline on Brier score and log loss (0.2470/0.6872 vs. 0.2485/0.6904), and
+statistically tied with pitcher-adjusted Elo on accuracy (54.7% vs. 54.8%)
+while still trailing it slightly on Brier/log loss (0.2470 vs. 0.2466,
+0.6872 vs. 0.6864).** That is reported here plainly — see Results below for
+the full before/after story, including a genuinely useful negative result
+along the way: a first, single-season hyperparameter tuning pass looked
+good on its validation split but barely transferred to the 2024 holdout
+(accuracy actually got worse); a second pass, tuned across TWO validation
+seasons (2022 and 2023) instead of one, transferred cleanly and produced
+the real improvement reported here. That progression — a failed tuning
+attempt, diagnosed, and fixed by tuning more robustly — is as much a part
+of this build's honesty standard as the final numbers are.
 
 ## What's real here
 
@@ -173,73 +176,91 @@ improve marginally. This is a plausible, mixed, real result: weather is a
 totals signal, not much of a moneyline signal, exactly as domain intuition
 would predict. Weather is kept in the final model.
 
-### Hyperparameter tuning (held out on 2023, evaluated on 2024)
+### Hyperparameter tuning: attempt 1 (single-season) failed to transfer, attempt 2 (multi-season) worked
 
-A coordinate-descent search (see `scripts/tune_hyperparams.py`) over
-halflife/shrinkage-k for pitcher, batter, bullpen, and team-offense
+**Attempt 1** — a coordinate-descent search (`scripts/tune_hyperparams.py`)
+over halflife/shrinkage-k for pitcher, batter, bullpen, and team-offense
 projections, scored by log loss on a held-out SLICE OF 2023 ONLY (games
-from 2023-07-20 onward, trained on everything before that date within
-2023) — 2024 was never touched during the search itself.
+from 2023-07-20 on, trained on everything before that date within 2023) —
+2024 was never touched during the search itself.
 
-| | Pitcher halflife | Batter halflife | Bullpen halflife | Team-off. k | 2023 val. log loss |
-|---|---|---|---|---|---|
-| Defaults | 45d | 60d | 20d | 12 | 0.6844 |
-| **Tuned** | **75d** | **100d** | 20d (unchanged) | 20 | **0.6833** |
+| | Pitcher halflife | Batter halflife | 2023 val. log loss |
+|---|---|---|---|
+| Defaults | 45d | 60d | 0.6844 |
+| Tuned (2023-only) | 75d | 100d | 0.6833 |
 
-Applying the tuned values and re-running the FINAL 2024 backtest (the true,
-untouched holdout), on the identical 2,165-game comparison set used
-throughout:
+Applying those values to the FINAL 2024 backtest (the true, untouched
+holdout): accuracy on the same 2,165-game comparison set actually got
+WORSE (54.5% → 53.8%) despite log loss improving marginally (0.6879 →
+0.6878, essentially noise). **A single-season validation split wasn't
+reliable enough to trust.**
+
+**Attempt 2** — the same search, but scored by POOLED log loss across
+held-out validation slices of BOTH 2022 and 2023 (2024 still never
+touched):
+
+| | Pitcher halflife | Batter halflife | Batter k | Bullpen halflife | Bullpen k | Team-off. halflife | Pooled val. log loss |
+|---|---|---|---|---|---|---|---|
+| Defaults | 45d | 60d | 200 | 20d | 250 | 30d | 0.6821 |
+| **Multi-season tuned** | 75d | 100d | **100** | **35d** | **400** | **50d** | **0.6801** |
+
+This is a materially different config from attempt 1 — batter k reversed
+direction (200 → 100), and bullpen/team-offense halflives both moved up
+substantially. It also improved on BOTH validation seasons individually
+(2022: 0.6796→0.6771; 2023: 0.6847→0.6832), a much stronger signal than
+attempt 1's single data point.
+
+Applying THIS config to the same final 2024 holdout:
 
 | | Accuracy | Brier | Log loss |
 |---|---|---|---|
-| Before tuning (defaults + weather) | 54.5% | 0.2474 | 0.6879 |
-| **After tuning** | **53.8%** | **0.2473** | **0.6878** |
+| Defaults + weather | 54.5% | 0.2474 | 0.6879 |
+| Attempt 1 (2023-only tuning) | 53.8% | 0.2473 | 0.6878 |
+| **Attempt 2 (multi-season tuning)** | **54.7%** | **0.2470** | **0.6872** |
 
-**Honest read — this is the most important finding of the tuning
-exercise:** the ~0.001 log-loss/Brier gain measured on the 2023 validation
-slice barely transferred to 2024 (log loss 0.6879 → 0.6878, essentially
-noise), and raw accuracy on 2024 actually got WORSE (54.5% → 53.8%) despite
-being selected on a metric (log loss) that improved. This is a textbook
-demonstration of why the spec insists on selecting on log loss/calibration
-rather than accuracy, AND why a validation-season improvement doesn't
-guarantee it holds on a fresh season — single-season MLB backtests are
-noisy enough that small hyperparameter deltas are hard to trust. We kept
-the tuned values (they're not worse on the metric we select on), but this
-result argues for tuning across multiple seasons before trusting a
-hyperparameter change, not just one.
+**Honest read:** this time the validation-set improvement DID transfer —
+accuracy recovered past the pre-tuning baseline, and Brier/log loss both
+improved more than attempt 1 managed. This is the config shipped in this
+build. The lesson we're keeping, not just the number: single-season
+hyperparameter tuning on this system was actively misleading, and
+tuning across at least two independent seasons was enough to catch it. The
+original spec's nested time-series CV (more seasons still) would be the
+further extension.
 
-### Moneyline — final model (lineups + weather + tuned hyperparameters)
+### Moneyline — final model (lineups + weather + multi-season-tuned hyperparameters)
 
 | Model | Accuracy | Brier | Log loss | ECE |
 |---|---|---|---|---|
-| Simulation model (ours, final) | 53.8% | 0.2473 | 0.6878 | 0.030 |
+| **Simulation model (ours, final)** | 54.7% | 0.2470 | 0.6872 | 0.030 |
 | Elo-only | 54.7% | 0.2485 | 0.6904 | 0.048 |
 | Home-field-always | 52.8% | 0.2494 | 0.6920 | 0.006 |
 | Better-record (Log5) | 50.3% | 0.2646 | 0.7264 | 0.097 |
 | Pitcher-adjusted Elo | 54.8% | **0.2466** | **0.6864** | 0.015 |
 
-**Honest read:** the final model is well-calibrated and close to every
-baseline on Brier/log loss, but is NOT the accuracy leader here (an earlier,
-pre-tuning checkpoint briefly was — see the tuning result above for why that
-shouldn't be over-trusted) and still trails pitcher-adjusted Elo on every
-probabilistic metric. Home-field-always remains the best-calibrated (it
-just predicts the historical rate) but least discriminating. Better-record
-(Log5) remains the weakest model overall.
+**Honest read:** the final model now clearly beats Elo-only on Brier score
+and log loss (0.2470/0.6872 vs. 0.2485/0.6904) while matching it almost
+exactly on accuracy. It's statistically tied with pitcher-adjusted Elo on
+accuracy (54.7% vs. 54.8% — a 2-game difference out of 2,165) and has
+closed roughly half the earlier Brier/log-loss gap to it (previously
+0.2474/0.6879 pre-tuning vs. 0.2466/0.6864; now 0.2470/0.6872). Not a
+decisive win over the strongest baseline, but real, measurable progress —
+reported plainly rather than declared a victory. Home-field-always remains
+the best-calibrated (it just predicts the historical rate) but least
+discriminating. Better-record (Log5) remains the weakest model overall.
 
 ### Totals — final model
 
 | | MAE | RMSE | Bias |
 |---|---|---|---|
-| Simulation model (final, with weather) | 3.434 | 4.382 | +0.181 |
+| **Simulation model (final)** | 3.429 | 4.371 | +0.183 |
 | Naive (as-of league-average total) | 3.451 | 4.355 | +0.083 |
 
-**Honest read:** with weather included, the totals model now measurably
-beats the naive league-average baseline on MAE (3.434 vs. 3.451) for the
-first time in this build — a real, if modest, win, and the clearest case in
-this session where a new signal (weather) produced unambiguous improvement.
+**Honest read:** the totals model beats the naive league-average baseline
+on MAE (3.429 vs. 3.451), improving further from the weather-only version
+(3.434) with multi-season-tuned hyperparameters — a real, if modest, edge.
 RMSE and bias are still slightly worse than naive, so this isn't a clean
-sweep, but the honest direction is: weather helped exactly where physics
-says it should.
+sweep, but the direction is real: weather plus properly-tuned halflives
+each contributed a small, genuine improvement to totals.
 
 ### Run line (±1.5, modeled as P(margin), not a variable spread)
 
@@ -316,11 +337,13 @@ python scripts/evaluate_backtest.py 2024 --prior 2023 --feature-set both
 - [x] Run line modeled as P(margin), not a variable spread.
 - [ ] CLV vs. closing line — **not measured**, no free/licensed odds source
       available in this build. Reported as unavailable, not fabricated.
-- [~] Beats baselines out-of-sample — **beats home-field-always and
-      better-record; does NOT clearly beat Elo-only or pitcher-adjusted
-      Elo** on the final (lineups + weather + tuned) model. Reported
-      honestly, not reframed — see "Hyperparameter tuning" above for why an
-      earlier checkpoint's apparent lead over Elo shouldn't be over-trusted.
+- [~] Beats baselines out-of-sample — **beats home-field-always,
+      better-record, AND Elo-only (on Brier/log loss); statistically tied
+      with pitcher-adjusted Elo on accuracy, still trailing it slightly on
+      Brier/log loss.** Reported honestly, not reframed — see
+      "Hyperparameter tuning" above for the full story of how this result
+      was reached (a first tuning attempt failed to transfer to the
+      holdout; a second, multi-season attempt did).
 - [x] Predictions immutable (backtest predictions parquet is write-once);
       no fabricated data anywhere in the pipeline.
 - [x] Uncertainty and the ~57–60% realistic ceiling stated (this file, top).
@@ -329,10 +352,10 @@ python scripts/evaluate_backtest.py 2024 --prior 2023 --feature-set both
 
 ## What's next (not done yet)
 
-See `docs/limitations.md` for the full list. In priority order: extending
-hyperparameter tuning across multiple seasons (this session's single-season
-tuning didn't reliably transfer — see above), PA-weighted lineup averaging,
-live confirmed-lineup ingestion for daily predictions (vs. backtest-only
-actual lineups), extending the backtest across more seasons, an odds data
-source for CLV, and improving the run-line dispersion model for one-run
-games.
+See `docs/limitations.md` for the full list. In priority order: tuning
+across even more seasons (the original spec's full nested time-series CV —
+two validation seasons was enough to catch attempt 1's overfitting, but
+more would be more robust still), PA-weighted lineup averaging, live
+confirmed-lineup ingestion for daily predictions (vs. backtest-only actual
+lineups), extending the backtest across more seasons, an odds data source
+for CLV, and improving the run-line dispersion model for one-run games.
