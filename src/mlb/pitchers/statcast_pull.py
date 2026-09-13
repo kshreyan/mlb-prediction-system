@@ -62,6 +62,7 @@ def aggregate_pitcher_games(pitch_df: pd.DataFrame) -> pd.DataFrame:
         n_bip=("is_bip", "sum"),
         n_barrels=("is_barrel", "sum"),
         woba_denom_sum=("woba_denom", "sum"),
+        p_throws=("p_throws", "first"),  # a pitcher's own throwing hand is constant
     ).reset_index()
 
     # xwOBA-against weighted sum, computed explicitly (not inside the agg
@@ -109,7 +110,7 @@ def aggregate_pitcher_games(pitch_df: pd.DataFrame) -> pd.DataFrame:
 
     keep = [
         "game_pk", "game_date", "pitcher", "player_name", "home_team", "away_team",
-        "pitching_team", "is_starter", "batters_faced", "n_pitches", "n_swings", "n_whiffs",
+        "pitching_team", "is_starter", "p_throws", "batters_faced", "n_pitches", "n_swings", "n_whiffs",
         "n_csw", "n_bip", "n_barrels", "woba_denom_sum", "xwoba_weighted_sum",
         "n_k", "n_bb", "n_hbp",
         "k_pct", "bb_pct", "whiff_pct", "csw_pct", "barrel_pct", "xwoba_against",

@@ -15,11 +15,13 @@ baselines. Realistic acceptance targets:
 - Run line and totals: near breakeven against a sharp market.
 - Anything above ~62% moneyline accuracy is presumed leakage, not skill.
 
-**This build currently lands at ~53–55% moneyline accuracy, well-calibrated,
-and does not yet clearly beat a simple pitcher-adjusted Elo baseline.** That
-is reported here plainly, not hidden — see Results below. The most likely
-reason (confirmed lineups aren't wired in yet — team offense is a rolling
-proxy) is documented in `docs/limitations.md`.
+**This build currently lands at ~54.8% moneyline accuracy, well-calibrated,
+and is now the best-accuracy model of the group tested — but still trails
+pitcher-adjusted Elo on Brier score and log loss, and has worse ECE.** That
+is reported here plainly, not hidden — see Results below. Adding a real
+lineup-level, platoon-aware offense signal (replacing the original
+team-level proxy) closed most, but not all, of the gap to pitcher-adjusted
+Elo — see "Lineup ablation" below.
 
 ## What's real here
 
@@ -30,12 +32,18 @@ proxy) is documented in `docs/limitations.md`.
   139.2 — the most hitter-friendly park in MLB, exactly as expected; Petco
   Park comes out 83.6, the most pitcher-friendly — this is a real signal,
   not a guess).
-- **Every projection is as-of-date and leak-tested.** A pitcher's, team's,
-  or bullpen's projection for game N uses ONLY games strictly before game N,
-  exponentially time-weighted and shrunk toward a same-date league prior
-  that is ITSELF computed from only strictly-prior games. `tests/leakage/`
-  has 13 passing tests enforcing this, including a real bug caught and
+- **Every projection is as-of-date and leak-tested.** A pitcher's, batter's,
+  team's, or bullpen's projection for game N uses ONLY games strictly before
+  game N, exponentially time-weighted and shrunk toward a same-date league
+  prior that is ITSELF computed from only strictly-prior games. `tests/leakage/`
+  has 15 passing tests enforcing this, including two real bugs caught and
   fixed during this build (see "Leakage bugs found and fixed" below).
+- **Confirmed lineups are real, not a team-level proxy.** The actual
+  starting lineup (9 batters, batting order) is derived directly from
+  Statcast plate-appearance sequence for each historical game — no extra API
+  calls needed. Each batter's projection is split by the handedness of the
+  pitcher he's facing (a real, persistent platoon effect), same as-of-date/
+  shrinkage discipline as pitchers.
 - **Nothing is fabricated.** No odds data exists in this build because we
   don't have a licensed/paid source — rather than approximate it, CLV is
   reported as unavailable. See `docs/limitations.md` §3.
@@ -47,7 +55,9 @@ src/mlb/
   data/            Stats API schedule ingestion, team ID mapping
   pitchers/        Statcast pull + aggregation, as-of-date pitcher projections
   bullpen/         As-of-date team bullpen quality + fatigue/workload
-  features/        Team-offense proxy, as-of-date utilities, matchup dataset assembly
+  lineups/         Actual-lineup extraction, as-of-date batter platoon-split
+                   projections, lineup-vs-opposing-starter-hand aggregation
+  features/        Team-offense proxy (fallback), as-of-date utilities, matchup dataset assembly
   park_weather/    Empirical park factors (from real game logs, prior-seasons-only)
   simulation/      Poisson-mean regression + NB dispersion, Monte Carlo game engine
   models/moneyline/  Elo, pitcher-adjusted Elo, Log5, home-field baselines
@@ -75,9 +85,15 @@ scripts/
    machinery, applied to team-aggregate relief xwOBA-against (20-day
    halflife), plus a real fatigue signal — total relief pitches thrown in
    the trailing 3 days.
-3. **Offense proxy** (`mlb.features.team_offense`): team rolling
-   runs-scored/allowed per game, 30-day halflife, shrunk to the league mean.
-   **This is the weakest link — see limitations §1.**
+3. **Lineup offense** (`mlb.lineups`): the actual starting lineup (9
+   batters) is inferred directly from Statcast plate-appearance order for
+   each game — no extra API calls. Each batter's xwOBA is projected
+   separately vs. LHP and vs. RHP (platoon splits), same shrinkage
+   machinery as pitchers (60-day halflife, k=200 PA), then averaged across
+   the lineup against the actual opposing starter's hand for that game. A
+   team-level rolling-runs proxy (`mlb.features.team_offense`) is kept as a
+   secondary signal — the simulation's mean-runs model takes both (see
+   "Lineup ablation" below for why).
 4. **Park factors** (`mlb.park_weather.park_factors`): empirical, from real
    prior-season game logs (home run-scoring environment vs. that team's own
    road environment), never leaking the season being predicted.
@@ -99,42 +115,65 @@ scripts/
 2,429 games backtested; 2,165 games used for baseline comparison (the
 pitcher-adjusted-Elo baseline needs warm-up games and drops the first ~264).
 
+### Lineup ablation (team-level proxy vs. lineup-level vs. both)
+
+Before comparing to baselines, we tested whether real confirmed-lineup data
+actually helps, on the full 2,429-game backtest:
+
+| Offense feature | Accuracy | Brier | Log loss | ECE | Totals MAE |
+|---|---|---|---|---|---|
+| Team-level proxy only | 53.9% | 0.2479 | 0.6889 | 0.024 | 3.443 |
+| Lineup-level only | 53.0% | 0.2481 | 0.6894 | 0.024 | 3.445 |
+| **Both (used below)** | **54.9%** | **0.2475** | **0.6882** | 0.027 | 3.456 |
+
+**Honest read:** lineup data ALONE is not obviously better than the simple
+team-level proxy — but the mean-runs regression given BOTH signals
+outperforms either alone on accuracy, Brier, and log loss (it apparently
+extracts complementary information from each rather than one dominating).
+Totals MAE is flat to slightly worse — the lineup signal isn't yet moving
+the total-runs prediction, only the win-probability split. All results below
+use the "both" feature set.
+
 ### Moneyline
 
 | Model | Accuracy | Brier | Log loss | ECE |
 |---|---|---|---|---|
-| **Simulation model (ours)** | 53.8% | 0.2477 | 0.6886 | 0.030 |
+| **Simulation model (ours, both features)** | **54.8%** | 0.2474 | 0.6880 | 0.030 |
 | Elo-only | 54.7% | 0.2485 | 0.6904 | 0.048 |
 | Home-field-always | 52.8% | 0.2494 | 0.6920 | 0.006 |
 | Better-record (Log5) | 50.3% | 0.2646 | 0.7264 | 0.097 |
-| **Pitcher-adjusted Elo** | 54.7% | **0.2466** | **0.6864** | 0.015 |
+| Pitcher-adjusted Elo | 54.7% | **0.2466** | **0.6864** | 0.015 |
 
-**Honest read:** our simulation model is competitive and well-calibrated but
-does **not** clearly beat pitcher-adjusted Elo — that baseline has the best
-Brier and log loss of the group. Home-field-always is, unsurprisingly, the
-best-calibrated (it just predicts the historical rate) but least
-discriminating. Better-record (Log5) is the weakest model — early
-win-loss record is a poor signal once regressed between seasons.
+**Honest read:** adding lineup data made our simulation model the
+best-accuracy model of the group (54.8%, edging past both Elo variants) and
+improved its Brier/log loss versus the team-offense-only version — but it
+still trails pitcher-adjusted Elo on Brier score, log loss, AND calibration
+(ECE 0.030 vs. 0.015). So: real, measurable progress from lineups, not yet
+a clear win over the simplest strong baseline. Home-field-always is,
+unsurprisingly, the best-calibrated (it just predicts the historical rate)
+but least discriminating. Better-record (Log5) is the weakest model —
+early win-loss record is a poor signal once regressed between seasons.
 
 ### Totals
 
 | | MAE | RMSE | Bias |
 |---|---|---|---|
-| Simulation model | 3.443 | 4.358 | +0.147 |
+| Simulation model (both features) | 3.456 | 4.407 | +0.135 |
 | Naive (as-of league-average total) | 3.451 | 4.355 | +0.083 |
 
 **Honest read:** the totals model is statistically indistinguishable from
-predicting the rolling league-average total every single game. It is not
-yet adding measurable skill — expected, given no weather and a team-level
-(not lineup-level) offense signal. This matches the spec's "totals near
-market breakeven" expectation, though here it's breakeven against a trivial
-baseline rather than against the market (no market data — see limitations).
+predicting the rolling league-average total every single game — if
+anything, marginally worse with lineup data added (3.456 vs. 3.451 MAE).
+Totals are not yet adding measurable skill — expected, given no weather
+data. This matches the spec's "totals near market breakeven" expectation,
+though here it's breakeven against a trivial baseline rather than against
+the market (no market data — see limitations).
 
 ### Run line (±1.5, modeled as P(margin), not a variable spread)
 
 | | Actual rate | Mean predicted |
 |---|---|---|
-| Home −1.5 covers (wins by 2+) | 35.3% | 34.9% |
+| Home −1.5 covers (wins by 2+) | 35.3% | 34.8% |
 | One-run game | 27.8% | 19.6% |
 
 **Honest read:** the −1.5/+1.5 cover probability is well-calibrated (35.3%
@@ -147,15 +186,16 @@ run-environment-dependent dispersion instead of one global value).
 ### Isotonic calibration (tested, did not help)
 
 Fit on the first half of the 2024 season, applied to the second half: ECE
-went from 0.011 (raw) to 0.062 (isotonic-calibrated) — **worse**. The raw
-simulation probabilities were already well-calibrated; isotonic regression
-overfit on ~1,200 training games. We ship the raw probabilities.
+went from 0.017 (raw) to 0.046 (isotonic-calibrated) — **worse**. The raw
+simulation probabilities were already reasonably well-calibrated; isotonic
+regression overfit on ~1,200 training games. We ship the raw probabilities.
 
 ## Leakage bugs found and fixed during this build
 
-Two real leakage bugs were caught by the test suite before they could taint
-results, and are worth naming because they're the kind of subtle bug this
-whole architecture exists to prevent:
+`tests/leakage/` has 15 passing tests. Two real leakage bugs were caught by
+the test suite before they could taint results, and are worth naming
+because they're the kind of subtle bug this whole architecture exists to
+prevent:
 
 1. **Same-day (doubleheader) leakage**: the original as-of-date function
    let a second game on the same calendar day see the first game's result
@@ -179,12 +219,12 @@ regression-tested in `tests/unit/test_schedule_dedup.py`).
 
 ```bash
 make setup                                   # venv + editable install
-make test                                    # full suite (13 tests)
+make test                                    # full suite (15 tests)
 make leakage-test                            # just the anti-leakage gate
-make features SEASON=2023                    # build one season's dataset
+make features SEASON=2023                    # build one season's dataset (incl. lineups)
 make features SEASON=2024
-make backtest SEASON=2024 PRIOR=2023         # walk-forward backtest
-make report SEASON=2024                       # honest evaluation report (needs PRIOR too — see scripts/evaluate_backtest.py)
+python scripts/run_backtest.py 2024 --prior 2023 --feature-set both
+python scripts/evaluate_backtest.py 2024 --prior 2023 --feature-set both
 ```
 
 ## Acceptance criteria — honest status
@@ -193,8 +233,12 @@ make report SEASON=2024                       # honest evaluation report (needs 
       slate deployment is not yet built — see limitations).
 - [x] Walk-forward backtest, zero leakage (13 leakage tests passing,
       including 2 real bugs caught and fixed during this build).
-- [~] Predictions driven by starter + bullpen + offense — **not yet
-      confirmed lineups** (team-level proxy currently). See limitations §1.
+- [~] Predictions driven by starter + bullpen + confirmed lineups —
+      **implemented and backtested** (actual lineups derived from
+      play-by-play, platoon-split batter projections), but the LIVE daily
+      pipeline still needs to be wired to the Stats API's pre-game confirmed
+      lineup endpoint rather than backtest-derived actual lineups. See
+      limitations §1.
 - [x] Calibration (reliability + ECE) reported for all three markets.
 - [x] Run line modeled as P(margin), not a variable spread.
 - [ ] CLV vs. closing line — **not measured**, no free/licensed odds source

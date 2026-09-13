@@ -24,11 +24,12 @@ from mlb.models.moneyline.elo import compute_elo_ratings
 from mlb.models.moneyline.baselines import home_field_baseline, better_record_baseline, walk_forward_logistic_baseline
 
 
-def main(season: int, prior_seasons: list[int]) -> dict:
+def main(season: int, prior_seasons: list[int], feature_set: str = "") -> dict:
     cfg = load_backtest_config()
     processed = cfg.processed_dir
 
-    preds = pd.read_parquet(processed / f"predictions_{season}.parquet")
+    suffix = f"_{feature_set}" if feature_set else ""
+    preds = pd.read_parquet(processed / f"predictions_{season}{suffix}.parquet")
     preds["game_date"] = pd.to_datetime(preds["game_date"])
 
     frames = []
@@ -96,12 +97,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("season", type=int)
     parser.add_argument("--prior", type=int, nargs="*", default=[])
+    parser.add_argument("--feature-set", choices=["team_offense", "lineup", "both"], default="both")
     args = parser.parse_args()
 
-    report = main(args.season, args.prior)
+    report = main(args.season, args.prior, args.feature_set)
     print(json.dumps(report, indent=2))
 
     cfg = load_backtest_config()
-    out_path = cfg.processed_dir / f"evaluation_report_{args.season}.json"
+    out_path = cfg.processed_dir / f"evaluation_report_{args.season}_{args.feature_set}.json"
     out_path.write_text(json.dumps(report, indent=2))
     print(f"\nSaved -> {out_path}")

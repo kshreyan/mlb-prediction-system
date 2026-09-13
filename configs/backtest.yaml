@@ -22,6 +22,16 @@ bullpen:
   halflife_days: 20
   fatigue_lookback_days: 3
 
+batter_projection:
+  # Batter xwOBA vs LHP/RHP, split-specific (platoon splits are real and
+  # persistent — this is the whole point of modeling lineups, not just
+  # team-level offense). Longer halflife than pitchers since a batter's
+  # true talent changes more slowly than a pitcher's in-season form, and
+  # a single split (vs L or vs R) sees roughly 1/3 as many PAs as his
+  # overall total, so needs more history to stabilize.
+  halflife_days: 60
+  shrinkage_k_pa: 200
+
 team_offense:
   # Team-level rolling runs/game is used as the current offense proxy (a
   # shrinkage prior, not the primary signal — see docs/limitations.md for

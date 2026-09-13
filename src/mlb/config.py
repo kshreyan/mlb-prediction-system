@@ -31,6 +31,12 @@ class TeamOffenseConfig:
 
 
 @dataclass(frozen=True)
+class BatterProjectionConfig:
+    halflife_days: float
+    shrinkage_k_pa: float
+
+
+@dataclass(frozen=True)
 class SimulationConfig:
     n_sims: int
     runs_per_team_distribution: str
@@ -50,6 +56,7 @@ class BacktestConfig:
     pitcher_projection: PitcherProjectionConfig
     bullpen: BullpenConfig
     team_offense: TeamOffenseConfig
+    batter_projection: BatterProjectionConfig
     simulation: SimulationConfig
     calibration: CalibrationConfig
 
@@ -72,6 +79,7 @@ def load_backtest_config(path: Path | None = None) -> BacktestConfig:
         pitcher_projection=PitcherProjectionConfig(**raw["pitcher_projection"]),
         bullpen=BullpenConfig(**raw["bullpen"]),
         team_offense=TeamOffenseConfig(**raw["team_offense"]),
+        batter_projection=BatterProjectionConfig(**raw["batter_projection"]),
         simulation=SimulationConfig(**raw["simulation"]),
         calibration=CalibrationConfig(**raw["calibration"]),
     )

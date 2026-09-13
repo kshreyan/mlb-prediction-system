@@ -12,13 +12,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pandas as pd
 
 from mlb.config import load_backtest_config
-from mlb.data.schedule import load_or_fetch_schedule
+from mlb.data.schedule import load_or_fetch_schedule, season_regular_season_bounds
 from mlb.data.team_ids import normalize_team_column
 from mlb.pitchers.projections import add_asof_pitcher_projections
 from mlb.bullpen.projections import add_asof_bullpen_projections
 from mlb.features.team_offense import add_asof_team_offense
 from mlb.features.build_dataset import build_game_features
 from mlb.park_weather.park_factors import load_or_compute_park_factors
+from mlb.lineups.statcast_pull import load_or_fetch_batter_data
+from mlb.lineups.projections import add_asof_batter_projections
+from mlb.lineups.lineup_offense import build_lineup_offense_features, derive_starter_hand_by_team_game
 
 
 def build_season(season: int, cfg, park_factor_seasons: list[int]) -> pd.DataFrame:
@@ -50,7 +53,19 @@ def build_season(season: int, cfg, park_factor_seasons: list[int]) -> pd.DataFra
     )
     pf = load_or_compute_park_factors(park_factor_seasons, raw_dir, load_or_fetch_schedule)
 
-    gf = build_game_features(sched, sproj, off, bp, pf)
+    start, end = season_regular_season_bounds(season)
+    batters, lineups = load_or_fetch_batter_data(season, raw_dir, start, end)
+    batters = normalize_team_column(batters, "batting_team", season, raw_dir)
+    lineups = normalize_team_column(lineups, "team", season, raw_dir)
+    bproj = add_asof_batter_projections(
+        batters,
+        halflife_days=cfg.batter_projection.halflife_days,
+        shrinkage_k=cfg.batter_projection.shrinkage_k_pa,
+    )
+    starter_hand = derive_starter_hand_by_team_game(starters)
+    lineup_off = build_lineup_offense_features(lineups, bproj, starter_hand)
+
+    gf = build_game_features(sched, sproj, off, bp, pf, lineup_offense=lineup_off)
     gf["season"] = season
     return gf
 

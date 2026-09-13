@@ -14,6 +14,7 @@ def build_game_features(
     team_offense: pd.DataFrame,
     bullpen: pd.DataFrame,
     park_factors: pd.DataFrame | None = None,
+    lineup_offense: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     sched = schedule[schedule["is_final"] & schedule["home_score"].notna()].copy()
     sched["game_date"] = pd.to_datetime(sched["game_date"])
@@ -44,6 +45,14 @@ def build_game_features(
     df = df.merge(home_bp, left_on=["game_pk", "home_team"], right_on=["game_pk", "team"], how="left").drop(columns=["team"])
     df = df.merge(away_bp, left_on=["game_pk", "away_team"], right_on=["game_pk", "team"], how="left").drop(columns=["team"])
 
+    if lineup_offense is not None and not lineup_offense.empty:
+        lo = lineup_offense[["game_pk", "team", "lineup_proj_xwoba", "lineup_n_batters_matched"]]
+        home_lo = lo.rename(columns={c: f"home_{c}" for c in lo.columns if c not in ("game_pk", "team")})
+        away_lo = lo.rename(columns={c: f"away_{c}" for c in lo.columns if c not in ("game_pk", "team")})
+        df = df.merge(home_lo, left_on=["game_pk", "home_team"], right_on=["game_pk", "team"], how="left").drop(columns=["team"])
+        df = df.merge(away_lo, left_on=["game_pk", "away_team"], right_on=["game_pk", "team"], how="left").drop(columns=["team"])
+        df["diff_lineup_xwoba"] = df["home_lineup_proj_xwoba"] - df["away_lineup_proj_xwoba"]
+
     if park_factors is not None and not park_factors.empty:
         pf = park_factors[["venue_name", "home_team", "park_factor"]]
         df = df.merge(pf, on=["venue_name", "home_team"], how="left")
@@ -62,9 +71,11 @@ def build_game_features(
 
 FEATURE_COLUMNS = [
     "diff_starter_xwoba", "diff_bullpen_xwoba", "diff_offense", "diff_defense",
+    "diff_lineup_xwoba",
     "home_starter_proj_xwoba_against", "away_starter_proj_xwoba_against",
     "home_bullpen_proj_bullpen_xwoba_against", "away_bullpen_proj_bullpen_xwoba_against",
     "home_off_proj_runs_scored_per_game", "away_off_proj_runs_scored_per_game",
+    "home_lineup_proj_xwoba", "away_lineup_proj_xwoba",
     "home_bullpen_recent_pitches", "away_bullpen_recent_pitches",
     "park_factor",
 ]

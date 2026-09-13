@@ -25,6 +25,8 @@ if __name__ == "__main__":
     parser.add_argument("season", type=int)
     parser.add_argument("--prior", type=int, nargs="*", default=[])
     parser.add_argument("--retrain-freq-days", type=int, default=7)
+    parser.add_argument("--feature-set", choices=["team_offense", "lineup", "both"], default="team_offense")
+    parser.add_argument("--out-suffix", default="")
     args = parser.parse_args()
 
     cfg = load_backtest_config()
@@ -44,8 +46,9 @@ if __name__ == "__main__":
         retrain_freq_days=args.retrain_freq_days,
         n_sims=cfg.simulation.n_sims,
         seed=cfg.random_seed,
+        feature_set=args.feature_set,
     )
     preds = walk_forward_backtest(gf_season, prior_history, bt_cfg)
-    out_path = processed / f"predictions_{args.season}.parquet"
+    out_path = processed / f"predictions_{args.season}{args.out_suffix}.parquet"
     preds.to_parquet(out_path, index=False)
-    print(f"season={args.season} n_predictions={len(preds)} -> {out_path}")
+    print(f"season={args.season} feature_set={args.feature_set} n_predictions={len(preds)} -> {out_path}")

@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from mlb.simulation.engine import simulate_game
-from mlb.simulation.run_environment import build_long_training_frame, fit_run_environment, MEAN_MODEL_FEATURES
+from mlb.simulation.run_environment import build_long_training_frame, fit_run_environment
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +28,21 @@ class BacktestConfig:
     n_sims: int = 20000
     seed: int = 42
     min_training_games: int = 200
+    feature_set: str = "team_offense"  # "team_offense" | "lineup" | "both"
 
 
 def _predict_row(model, row: pd.Series, n_sims: int, seed: int):
     X_home = pd.DataFrame([{
-        "own_offense_proj": row["home_off_proj_runs_scored_per_game"],
+        "own_offense_proj": row.get("home_off_proj_runs_scored_per_game"),
+        "own_lineup_xwoba": row.get("home_lineup_proj_xwoba"),
         "opp_starter_xwoba": row["away_starter_proj_xwoba_against"],
         "opp_bullpen_xwoba": row["away_bullpen_proj_bullpen_xwoba_against"],
         "park_factor": row["park_factor"],
         "is_home": 1.0,
     }])
     X_away = pd.DataFrame([{
-        "own_offense_proj": row["away_off_proj_runs_scored_per_game"],
+        "own_offense_proj": row.get("away_off_proj_runs_scored_per_game"),
+        "own_lineup_xwoba": row.get("away_lineup_proj_xwoba"),
         "opp_starter_xwoba": row["home_starter_proj_xwoba_against"],
         "opp_bullpen_xwoba": row["home_bullpen_proj_bullpen_xwoba_against"],
         "park_factor": row["park_factor"],
@@ -89,8 +92,8 @@ def walk_forward_backtest(
             window_start = window_end + pd.Timedelta(days=1)
             continue
 
-        long_train = build_long_training_frame(train_pool)
-        model = fit_run_environment(long_train)
+        long_train = build_long_training_frame(train_pool, feature_set=cfg.feature_set)
+        model = fit_run_environment(long_train, feature_set=cfg.feature_set)
 
         for _, row in test_slice.iterrows():
             rng_seed += 1
