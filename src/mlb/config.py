@@ -22,6 +22,7 @@ class PitcherProjectionConfig:
 class BullpenConfig:
     halflife_days: float
     fatigue_lookback_days: int
+    shrinkage_k_batters: float
 
 
 @dataclass(frozen=True)

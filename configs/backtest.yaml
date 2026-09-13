@@ -12,15 +12,23 @@ random_seed: 42
 pitcher_projection:
   # Exponentially-weighted rolling window (in days) over a pitcher's own
   # Statcast game logs, computed strictly as-of the day before each start.
-  halflife_days: 45
+  # Tuned via scripts/tune_hyperparams.py (coordinate-descent search on a
+  # held-out slice of 2023 only — 2024 was never touched during tuning).
+  # Was 45 days; 75 scored better (log loss 0.6844 -> 0.6837 on that slice).
+  halflife_days: 75
   # Minimum batters-faced before a pitcher's own sample is trusted much;
   # below this, projections shrink hard toward the league-average prior.
+  # Tuned: 250 remained the best of {125, 250, 400}.
   shrinkage_k_batters: 250
   min_prior_batters: 150000  # batters used to build the league prior per season
 
 bullpen:
+  # Tuned: 20 remained the best of {10, 20, 35}.
   halflife_days: 20
   fatigue_lookback_days: 3
+  # Tuned independently from the pitcher shrinkage_k above (own dedicated
+  # field): 250 remained the best of {125, 250, 400}.
+  shrinkage_k_batters: 250
 
 batter_projection:
   # Batter xwOBA vs LHP/RHP, split-specific (platoon splits are real and
@@ -29,15 +37,17 @@ batter_projection:
   # true talent changes more slowly than a pitcher's in-season form, and
   # a single split (vs L or vs R) sees roughly 1/3 as many PAs as his
   # overall total, so needs more history to stabilize.
-  halflife_days: 60
-  shrinkage_k_pa: 200
+  # Tuned: was 60 days; 100 scored better (log loss 0.6840 -> 0.6833).
+  halflife_days: 100
+  shrinkage_k_pa: 200  # tuned: 200 remained the best of {100, 200, 350}
 
 team_offense:
-  # Team-level rolling runs/game is used as the current offense proxy (a
-  # shrinkage prior, not the primary signal — see docs/limitations.md for
-  # the planned confirmed-lineup upgrade).
-  halflife_days: 30
-  shrinkage_k_games: 12
+  # Team-level rolling runs/game is used as a secondary offense signal
+  # alongside the lineup-level projection (see mlb.lineups) — the
+  # regression itself learns how much to weigh each; see README "Lineup
+  # ablation" for why both together beat either alone.
+  halflife_days: 30  # tuned: 30 remained the best of {15, 30, 50}
+  shrinkage_k_games: 20  # tuned: was 12; 20 scored marginally better
 
 simulation:
   n_sims: 20000

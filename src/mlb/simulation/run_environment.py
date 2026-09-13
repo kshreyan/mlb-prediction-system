@@ -25,7 +25,7 @@ from sklearn.linear_model import PoissonRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-BASE_FEATURES = ["opp_starter_xwoba", "opp_bullpen_xwoba", "park_factor", "is_home"]
+BASE_FEATURES = ["opp_starter_xwoba", "opp_bullpen_xwoba", "park_factor", "is_home", "wind_effect", "temp_f_filled"]
 
 FEATURE_SETS = {
     "team_offense": ["own_offense_proj"] + BASE_FEATURES,
@@ -48,6 +48,8 @@ def build_long_training_frame(game_features: pd.DataFrame, feature_set: str = "t
         "opp_starter_xwoba": game_features["away_starter_proj_xwoba_against"],
         "opp_bullpen_xwoba": game_features["away_bullpen_proj_bullpen_xwoba_against"],
         "park_factor": game_features["park_factor"],
+        "wind_effect": game_features.get("wind_effect", 0.0),
+        "temp_f_filled": game_features.get("temp_f_filled", 72.0),
     })
     away = pd.DataFrame({
         "game_pk": game_features["game_pk"],
@@ -59,6 +61,8 @@ def build_long_training_frame(game_features: pd.DataFrame, feature_set: str = "t
         "opp_starter_xwoba": game_features["home_starter_proj_xwoba_against"],
         "opp_bullpen_xwoba": game_features["home_bullpen_proj_bullpen_xwoba_against"],
         "park_factor": game_features["park_factor"],
+        "wind_effect": game_features.get("wind_effect", 0.0),
+        "temp_f_filled": game_features.get("temp_f_filled", 72.0),
     })
     long_df = pd.concat([home, away], ignore_index=True)
     long_df.attrs["feature_set"] = feature_set

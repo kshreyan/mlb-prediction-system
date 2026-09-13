@@ -27,17 +27,18 @@ if __name__ == "__main__":
     parser.add_argument("--retrain-freq-days", type=int, default=7)
     parser.add_argument("--feature-set", choices=["team_offense", "lineup", "both"], default="team_offense")
     parser.add_argument("--out-suffix", default="")
+    parser.add_argument("--in-suffix", default="", help="Read game_features_{season}{in-suffix}.parquet (e.g. _noweather)")
     args = parser.parse_args()
 
     cfg = load_backtest_config()
     processed = cfg.processed_dir
 
-    gf_season = pd.read_parquet(processed / f"game_features_{args.season}.parquet")
+    gf_season = pd.read_parquet(processed / f"game_features_{args.season}{args.in_suffix}.parquet")
     gf_season["game_date"] = pd.to_datetime(gf_season["game_date"])
 
     prior_frames = []
     for p in args.prior:
-        prior_df = pd.read_parquet(processed / f"game_features_{p}.parquet")
+        prior_df = pd.read_parquet(processed / f"game_features_{p}{args.in_suffix}.parquet")
         prior_df["game_date"] = pd.to_datetime(prior_df["game_date"])
         prior_frames.append(prior_df)
     prior_history = pd.concat(prior_frames, ignore_index=True) if prior_frames else None

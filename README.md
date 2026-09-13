@@ -15,13 +15,17 @@ baselines. Realistic acceptance targets:
 - Run line and totals: near breakeven against a sharp market.
 - Anything above ~62% moneyline accuracy is presumed leakage, not skill.
 
-**This build currently lands at ~54.8% moneyline accuracy, well-calibrated,
-and is now the best-accuracy model of the group tested — but still trails
-pitcher-adjusted Elo on Brier score and log loss, and has worse ECE.** That
-is reported here plainly, not hidden — see Results below. Adding a real
-lineup-level, platoon-aware offense signal (replacing the original
-team-level proxy) closed most, but not all, of the gap to pitcher-adjusted
-Elo — see "Lineup ablation" below.
+**This build currently lands at ~53.8% moneyline accuracy on the true 2024
+holdout, well-calibrated (ECE 0.030), with Brier score and log loss close
+to — but still trailing — a simple pitcher-adjusted Elo baseline (0.2473 vs
+0.2466, 0.6878 vs 0.6864).** That is reported here plainly, not hidden — see
+Results below. Real, freely-available signals were added this session
+(confirmed lineups with platoon splits, real weather) and a real
+hyperparameter search was run — each is reported honestly below, including
+where the gains were real, where they were negligible, and one case
+(hyperparameter tuning) where the validation-set improvement did NOT fully
+transfer to the untouched 2024 holdout — a useful, humbling result in its
+own right.
 
 ## What's real here
 
@@ -44,6 +48,17 @@ Elo — see "Lineup ablation" below.
   calls needed. Each batter's projection is split by the handedness of the
   pitcher he's facing (a real, persistent platoon effect), same as-of-date/
   shrinkage discipline as pitchers.
+- **Real weather, not fabricated or omitted.** Per-game condition, temp,
+  and wind speed/direction come from the MLB Stats API's `game` endpoint
+  (real readings, e.g. `{"condition": "Clear", "temp": "60", "wind": "13
+  mph, L To R"}`) — pulled for all ~4,860 games across 2023-2024 via a
+  resumable, moderately-concurrent puller. A real API data artifact (dome
+  games sometimes report `temp=0` as a placeholder) was caught and nulled
+  out rather than fed to the model as a literal reading.
+- **Hyperparameters were actually tuned**, not just guessed — via a
+  held-out coordinate-descent search on 2023 data ONLY, keeping 2024
+  completely untouched as the final test set. See "Hyperparameter tuning"
+  below for the (mixed) result.
 - **Nothing is fabricated.** No odds data exists in this build because we
   don't have a licensed/paid source — rather than approximate it, CLV is
   reported as unavailable. See `docs/limitations.md` §3.
@@ -58,7 +73,7 @@ src/mlb/
   lineups/         Actual-lineup extraction, as-of-date batter platoon-split
                    projections, lineup-vs-opposing-starter-hand aggregation
   features/        Team-offense proxy (fallback), as-of-date utilities, matchup dataset assembly
-  park_weather/    Empirical park factors (from real game logs, prior-seasons-only)
+  park_weather/    Empirical park factors (real game logs, prior-seasons-only) + real per-game weather
   simulation/      Poisson-mean regression + NB dispersion, Monte Carlo game engine
   models/moneyline/  Elo, pitcher-adjusted Elo, Log5, home-field baselines
   calibration/     Isotonic post-hoc calibration
@@ -71,16 +86,17 @@ scripts/
   build_features.py     Build one season's leak-free game-feature dataset
   run_backtest.py        Walk-forward backtest one season
   evaluate_backtest.py    Produce the honest evaluation report
+  tune_hyperparams.py     Held-out coordinate-descent hyperparameter search (2023 only)
 ```
 
 ## How the model works
 
 1. **Starter projection** (`mlb.pitchers.projections`): xwOBA-against, K%,
-   BB%, whiff%, CSW%, barrel% — each exponentially time-weighted (45-day
-   halflife) over the pitcher's own starts and shrunk toward a same-date
-   league average using an empirical-Bayes credibility formula
-   (`k=250` batters). A 4-start hot streak is outweighed by the shrinkage
-   prior exactly as the spec requires.
+   BB%, whiff%, CSW%, barrel% — each exponentially time-weighted (75-day
+   halflife, tuned — see below) over the pitcher's own starts and shrunk
+   toward a same-date league average using an empirical-Bayes credibility
+   formula (`k=250` batters). A 4-start hot streak is outweighed by the
+   shrinkage prior exactly as the spec requires.
 2. **Bullpen projection** (`mlb.bullpen.projections`): same shrinkage
    machinery, applied to team-aggregate relief xwOBA-against (20-day
    halflife), plus a real fatigue signal — total relief pitches thrown in
@@ -89,24 +105,30 @@ scripts/
    batters) is inferred directly from Statcast plate-appearance order for
    each game — no extra API calls. Each batter's xwOBA is projected
    separately vs. LHP and vs. RHP (platoon splits), same shrinkage
-   machinery as pitchers (60-day halflife, k=200 PA), then averaged across
-   the lineup against the actual opposing starter's hand for that game. A
-   team-level rolling-runs proxy (`mlb.features.team_offense`) is kept as a
-   secondary signal — the simulation's mean-runs model takes both (see
-   "Lineup ablation" below for why).
+   machinery as pitchers (100-day halflife, tuned, k=200 PA), then averaged
+   across the lineup against the actual opposing starter's hand for that
+   game. A team-level rolling-runs proxy (`mlb.features.team_offense`) is
+   kept as a secondary signal — the simulation's mean-runs model takes both
+   (see "Lineup ablation" below for why).
 4. **Park factors** (`mlb.park_weather.park_factors`): empirical, from real
    prior-season game logs (home run-scoring environment vs. that team's own
    road environment), never leaking the season being predicted.
-5. **Simulation** (`mlb.simulation`): a Poisson-mean regression (features:
-   own offense proxy, opponent starter xwOBA, opponent bullpen xwOBA, park
-   factor, home/away) predicts each team's expected runs; a Negative
-   Binomial dispersion parameter is estimated empirically from the
-   actual/predicted residual variance (Pearson method-of-moments — teams'
-   runs are overdispersed relative to Poisson, as expected). A 20,000-draw
-   Monte Carlo (Gamma-Poisson mixture) produces win probability, run-line
-   cover probability, and the full total-runs distribution **jointly and
+5. **Weather** (`mlb.park_weather.weather`): real per-game condition, temp,
+   and wind speed/direction from the MLB Stats API. Wind is encoded as a
+   signed `wind_effect` (speed blowing out = positive, in = negative,
+   cross/none/indoor = zero) rather than an assumed run value — the
+   regression learns the coefficient.
+6. **Simulation** (`mlb.simulation`): a Poisson-mean regression (features:
+   own offense proxy, own lineup xwOBA, opponent starter xwOBA, opponent
+   bullpen xwOBA, park factor, home/away, wind effect, temperature)
+   predicts each team's expected runs; a Negative Binomial dispersion
+   parameter is estimated empirically from the actual/predicted residual
+   variance (Pearson method-of-moments — teams' runs are overdispersed
+   relative to Poisson, as expected). A 20,000-draw Monte Carlo
+   (Gamma-Poisson mixture) produces win probability, run-line cover
+   probability, and the full total-runs distribution **jointly and
    consistently from one simulation**, per the spec.
-6. **Walk-forward backtest** (`mlb.backtest.walk_forward`): retrains weekly
+7. **Walk-forward backtest** (`mlb.backtest.walk_forward`): retrains weekly
    on an expanding window (all games strictly before the retrain date); each
    week's predictions are locked in before that week's results are known.
 
@@ -114,60 +136,110 @@ scripts/
 
 2,429 games backtested; 2,165 games used for baseline comparison (the
 pitcher-adjusted-Elo baseline needs warm-up games and drops the first ~264).
+Numbers below are the FINAL pipeline (lineups + weather + tuned
+hyperparameters) unless a table is explicitly an ablation showing an
+earlier stage.
 
 ### Lineup ablation (team-level proxy vs. lineup-level vs. both)
 
-Before comparing to baselines, we tested whether real confirmed-lineup data
-actually helps, on the full 2,429-game backtest:
+Tested with weather off and pre-tuning defaults, on the full 2,429-game
+backtest, to isolate the lineup effect alone:
 
 | Offense feature | Accuracy | Brier | Log loss | ECE | Totals MAE |
 |---|---|---|---|---|---|
 | Team-level proxy only | 53.9% | 0.2479 | 0.6889 | 0.024 | 3.443 |
 | Lineup-level only | 53.0% | 0.2481 | 0.6894 | 0.024 | 3.445 |
-| **Both (used below)** | **54.9%** | **0.2475** | **0.6882** | 0.027 | 3.456 |
+| **Both** | **54.9%** | **0.2475** | **0.6882** | 0.027 | 3.456 |
 
 **Honest read:** lineup data ALONE is not obviously better than the simple
 team-level proxy — but the mean-runs regression given BOTH signals
 outperforms either alone on accuracy, Brier, and log loss (it apparently
 extracts complementary information from each rather than one dominating).
-Totals MAE is flat to slightly worse — the lineup signal isn't yet moving
-the total-runs prediction, only the win-probability split. All results below
-use the "both" feature set.
+Totals MAE is flat to slightly worse here — see the weather ablation below
+for where totals actually improved. Both signals are kept in the final model.
 
-### Moneyline
+### Weather ablation (both offense signals, with vs. without weather)
+
+| | Accuracy | Brier | Log loss | ECE | Totals MAE | Totals RMSE |
+|---|---|---|---|---|---|---|
+| Without weather | 54.8% | 0.2475 | 0.6882 | 0.027 | 3.456 | 4.407 |
+| **With weather** | 54.5% | 0.2475 | 0.6881 | 0.024 | **3.430** | **4.367** |
+
+**Honest read:** weather measurably improves the TOTALS prediction (MAE
+3.456 → 3.430, RMSE 4.407 → 4.367) — physically sensible, since wind/temp
+directly affect run-scoring environment. It does NOT improve, and slightly
+hurts, moneyline accuracy (54.8% → 54.5%), while log loss and ECE both
+improve marginally. This is a plausible, mixed, real result: weather is a
+totals signal, not much of a moneyline signal, exactly as domain intuition
+would predict. Weather is kept in the final model.
+
+### Hyperparameter tuning (held out on 2023, evaluated on 2024)
+
+A coordinate-descent search (see `scripts/tune_hyperparams.py`) over
+halflife/shrinkage-k for pitcher, batter, bullpen, and team-offense
+projections, scored by log loss on a held-out SLICE OF 2023 ONLY (games
+from 2023-07-20 onward, trained on everything before that date within
+2023) — 2024 was never touched during the search itself.
+
+| | Pitcher halflife | Batter halflife | Bullpen halflife | Team-off. k | 2023 val. log loss |
+|---|---|---|---|---|---|
+| Defaults | 45d | 60d | 20d | 12 | 0.6844 |
+| **Tuned** | **75d** | **100d** | 20d (unchanged) | 20 | **0.6833** |
+
+Applying the tuned values and re-running the FINAL 2024 backtest (the true,
+untouched holdout), on the identical 2,165-game comparison set used
+throughout:
+
+| | Accuracy | Brier | Log loss |
+|---|---|---|---|
+| Before tuning (defaults + weather) | 54.5% | 0.2474 | 0.6879 |
+| **After tuning** | **53.8%** | **0.2473** | **0.6878** |
+
+**Honest read — this is the most important finding of the tuning
+exercise:** the ~0.001 log-loss/Brier gain measured on the 2023 validation
+slice barely transferred to 2024 (log loss 0.6879 → 0.6878, essentially
+noise), and raw accuracy on 2024 actually got WORSE (54.5% → 53.8%) despite
+being selected on a metric (log loss) that improved. This is a textbook
+demonstration of why the spec insists on selecting on log loss/calibration
+rather than accuracy, AND why a validation-season improvement doesn't
+guarantee it holds on a fresh season — single-season MLB backtests are
+noisy enough that small hyperparameter deltas are hard to trust. We kept
+the tuned values (they're not worse on the metric we select on), but this
+result argues for tuning across multiple seasons before trusting a
+hyperparameter change, not just one.
+
+### Moneyline — final model (lineups + weather + tuned hyperparameters)
 
 | Model | Accuracy | Brier | Log loss | ECE |
 |---|---|---|---|---|
-| **Simulation model (ours, both features)** | **54.8%** | 0.2474 | 0.6880 | 0.030 |
+| Simulation model (ours, final) | 53.8% | 0.2473 | 0.6878 | 0.030 |
 | Elo-only | 54.7% | 0.2485 | 0.6904 | 0.048 |
 | Home-field-always | 52.8% | 0.2494 | 0.6920 | 0.006 |
 | Better-record (Log5) | 50.3% | 0.2646 | 0.7264 | 0.097 |
-| Pitcher-adjusted Elo | 54.7% | **0.2466** | **0.6864** | 0.015 |
+| Pitcher-adjusted Elo | 54.8% | **0.2466** | **0.6864** | 0.015 |
 
-**Honest read:** adding lineup data made our simulation model the
-best-accuracy model of the group (54.8%, edging past both Elo variants) and
-improved its Brier/log loss versus the team-offense-only version — but it
-still trails pitcher-adjusted Elo on Brier score, log loss, AND calibration
-(ECE 0.030 vs. 0.015). So: real, measurable progress from lineups, not yet
-a clear win over the simplest strong baseline. Home-field-always is,
-unsurprisingly, the best-calibrated (it just predicts the historical rate)
-but least discriminating. Better-record (Log5) is the weakest model —
-early win-loss record is a poor signal once regressed between seasons.
+**Honest read:** the final model is well-calibrated and close to every
+baseline on Brier/log loss, but is NOT the accuracy leader here (an earlier,
+pre-tuning checkpoint briefly was — see the tuning result above for why that
+shouldn't be over-trusted) and still trails pitcher-adjusted Elo on every
+probabilistic metric. Home-field-always remains the best-calibrated (it
+just predicts the historical rate) but least discriminating. Better-record
+(Log5) remains the weakest model overall.
 
-### Totals
+### Totals — final model
 
 | | MAE | RMSE | Bias |
 |---|---|---|---|
-| Simulation model (both features) | 3.456 | 4.407 | +0.135 |
+| Simulation model (final, with weather) | 3.434 | 4.382 | +0.181 |
 | Naive (as-of league-average total) | 3.451 | 4.355 | +0.083 |
 
-**Honest read:** the totals model is statistically indistinguishable from
-predicting the rolling league-average total every single game — if
-anything, marginally worse with lineup data added (3.456 vs. 3.451 MAE).
-Totals are not yet adding measurable skill — expected, given no weather
-data. This matches the spec's "totals near market breakeven" expectation,
-though here it's breakeven against a trivial baseline rather than against
-the market (no market data — see limitations).
+**Honest read:** with weather included, the totals model now measurably
+beats the naive league-average baseline on MAE (3.434 vs. 3.451) for the
+first time in this build — a real, if modest, win, and the clearest case in
+this session where a new signal (weather) produced unambiguous improvement.
+RMSE and bias are still slightly worse than naive, so this isn't a clean
+sweep, but the honest direction is: weather helped exactly where physics
+says it should.
 
 ### Run line (±1.5, modeled as P(margin), not a variable spread)
 
@@ -176,12 +248,13 @@ the market (no market data — see limitations).
 | Home −1.5 covers (wins by 2+) | 35.3% | 34.8% |
 | One-run game | 27.8% | 19.6% |
 
-**Honest read:** the −1.5/+1.5 cover probability is well-calibrated (35.3%
-vs. 34.9%). The model meaningfully **underestimates** how often games are
-decided by exactly one run — the NB dispersion parameter (fit once, globally)
-doesn't fully capture the real fat-tailed frequency of close games. This is
-a concrete, named target for the next iteration (e.g., a per-team or
-run-environment-dependent dispersion instead of one global value).
+**Honest read:** the −1.5/+1.5 cover probability remains well-calibrated
+(35.3% vs. 34.8%). The model still meaningfully **underestimates** how
+often games are decided by exactly one run — the NB dispersion parameter
+(fit once, globally) doesn't fully capture the real fat-tailed frequency of
+close games, unchanged by this session's additions. Concrete target for
+next iteration: a per-team or run-environment-dependent dispersion instead
+of one global value.
 
 ### Isotonic calibration (tested, did not help)
 
@@ -244,17 +317,22 @@ python scripts/evaluate_backtest.py 2024 --prior 2023 --feature-set both
 - [ ] CLV vs. closing line — **not measured**, no free/licensed odds source
       available in this build. Reported as unavailable, not fabricated.
 - [~] Beats baselines out-of-sample — **beats home-field-always and
-      better-record; does NOT clearly beat pitcher-adjusted Elo.** Reported
-      honestly, not reframed.
+      better-record; does NOT clearly beat Elo-only or pitcher-adjusted
+      Elo** on the final (lineups + weather + tuned) model. Reported
+      honestly, not reframed — see "Hyperparameter tuning" above for why an
+      earlier checkpoint's apparent lead over Elo shouldn't be over-trusted.
 - [x] Predictions immutable (backtest predictions parquet is write-once);
       no fabricated data anywhere in the pipeline.
 - [x] Uncertainty and the ~57–60% realistic ceiling stated (this file, top).
 - [x] No "beats Vegas" claim anywhere — there is no Vegas comparison in
       this build at all, by design.
 
-## What's next (not done in this session)
+## What's next (not done yet)
 
-See `docs/limitations.md` for the full list. In priority order: confirmed
-lineups (biggest expected lift), weather, extending the backtest across
-more seasons, an odds data source for CLV, and improving the run-line
-dispersion model for one-run games.
+See `docs/limitations.md` for the full list. In priority order: extending
+hyperparameter tuning across multiple seasons (this session's single-season
+tuning didn't reliably transfer — see above), PA-weighted lineup averaging,
+live confirmed-lineup ingestion for daily predictions (vs. backtest-only
+actual lineups), extending the backtest across more seasons, an odds data
+source for CLV, and improving the run-line dispersion model for one-run
+games.

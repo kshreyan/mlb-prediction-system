@@ -39,6 +39,8 @@ def _predict_row(model, row: pd.Series, n_sims: int, seed: int):
         "opp_bullpen_xwoba": row["away_bullpen_proj_bullpen_xwoba_against"],
         "park_factor": row["park_factor"],
         "is_home": 1.0,
+        "wind_effect": row.get("wind_effect", 0.0),
+        "temp_f_filled": row.get("temp_f_filled", 72.0),
     }])
     X_away = pd.DataFrame([{
         "own_offense_proj": row.get("away_off_proj_runs_scored_per_game"),
@@ -47,6 +49,8 @@ def _predict_row(model, row: pd.Series, n_sims: int, seed: int):
         "opp_bullpen_xwoba": row["home_bullpen_proj_bullpen_xwoba_against"],
         "park_factor": row["park_factor"],
         "is_home": 0.0,
+        "wind_effect": row.get("wind_effect", 0.0),
+        "temp_f_filled": row.get("temp_f_filled", 72.0),
     }])
     mu_h = model.predict_mu(X_home)[0]
     mu_a = model.predict_mu(X_away)[0]

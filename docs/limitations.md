@@ -36,12 +36,28 @@ What's still missing:
   flat to slightly worse) — the win-probability split benefited more than
   the total-runs mean did. Worth investigating further.
 
-## 2. No weather data
+## 2. Weather: implemented, helps totals, doesn't help moneyline
 
-Wind direction/speed and temperature are named in the spec as real,
-predictable total-runs movers (especially at parks like Wrigley Field). None
-is wired in. Park factors ARE implemented and are real (computed from actual
-game-log runs, not fabricated — see `mlb.park_weather.park_factors`).
+UPDATE: closed. `mlb.park_weather.weather` pulls real per-game condition,
+temp, and wind speed/direction from the MLB Stats API's `game` endpoint for
+every game in 2023-2024 (~4,860 games, one API call each, moderate
+concurrency). Wind is encoded as a signed `wind_effect` (out=positive,
+in=negative, cross/none/indoor=zero) so the regression learns the
+coefficient rather than assuming one. Result (README §Results, "Weather
+ablation"): totals MAE improved from 3.456 to 3.430 — the clearest
+unambiguous win from any single addition this session. Moneyline accuracy
+actually dropped slightly (54.8% → 54.5%) with log loss/ECE roughly flat —
+weather is a totals signal, not a moneyline signal, as domain intuition
+would predict.
+
+Remaining gap: the Stats API only reports the weather AT GAME TIME (or at
+whatever point the API snapshot was taken), not a pre-game FORECAST. For a
+live prediction pipeline, you'd want a forecast API for games not yet
+played, falling back to the actual reading only for backtesting historical
+games (where it's the correct, knowable-after-first-pitch information for
+grading, though technically a pre-game forecast would sometimes differ from
+the eventual actual reading — a subtlety worth flagging for anyone building
+the live pipeline).
 
 ## 3. No market odds — CLV is not measured
 
@@ -89,22 +105,31 @@ the shipped output rather than the isotonic-recalibrated ones. See
 
 ## 8. The simulation model still doesn't clearly beat a pitcher-adjusted Elo baseline
 
-UPDATE after adding lineups: the simulation model (with both team-offense
-and lineup features) now has the BEST accuracy of every model tested
-(54.8%, vs. 54.7% for both Elo variants), and improved Brier/log loss versus
-the team-offense-only version. But it still trails pitcher-adjusted Elo on
-Brier score (0.2474 vs 0.2466), log loss (0.6880 vs 0.6864), and ECE (0.030
-vs. 0.015) on the same 2,165-game comparison. See `README.md` §Results for
-the full table. Progress, not a win — reported plainly per the project's
-honesty standard. Remaining likely fixes: PA-weighted lineup averaging (see
-§1), tuning halflife/shrinkage hyperparameters (currently reasonable
-defaults, never searched — see #9 below), and a proper stacked ensemble
+UPDATE after lineups + weather + hyperparameter tuning: the FINAL model
+(53.8% accuracy, Brier 0.2473, log loss 0.6878) still trails pitcher-adjusted
+Elo (54.8% accuracy, Brier 0.2466, log loss 0.6864) on every probabilistic
+metric, and is no longer the accuracy leader either (an intermediate,
+pre-tuning checkpoint briefly was 54.8-54.9%, but see §9 below for why that
+shouldn't be over-trusted). See `README.md` §Results for the full
+before/after tables at each stage. Reported plainly per the project's
+honesty standard — this remains the single most important open finding of
+the whole build. Remaining likely fixes: PA-weighted lineup averaging (§1),
+multi-season hyperparameter tuning (§9), and a proper stacked ensemble
 instead of picking one model.
 
-## 9. No hyperparameter tuning
+## 9. Hyperparameter tuning was done, but the result argues for caution
 
-All halflife/shrinkage-k values (pitcher: 45 days / k=250; batter: 60 days /
-k=200; bullpen: 20 days / k=250; team offense: 30 days / k=12 games) are
-reasonable defaults chosen by domain judgment, never tuned via the nested
-time-series cross-validation the original spec calls for. This is a
-plausible source of the remaining gap to pitcher-adjusted Elo.
+`scripts/tune_hyperparams.py` runs a real, held-out coordinate-descent
+search: candidates are scored by walk-forward log loss on a slice of 2023
+ONLY (games from 2023-07-20 on, trained on earlier 2023 games), keeping
+2024 completely untouched. This found longer halflives helped on the 2023
+validation slice (pitcher 45→75 days, batter 60→100 days; log loss
+0.6844→0.6833) — but when applied to the true 2024 holdout, the improvement
+nearly vanished (log loss 0.6879→0.6878) and RAW ACCURACY GOT WORSE
+(54.5%→53.8%). We kept the tuned values (not worse on the metric actually
+selected on), but this is an honest demonstration that a single-season
+validation split isn't a fully reliable guide here — MLB backtests are
+noisy enough that hyperparameter deltas this size are hard to trust without
+tuning across multiple seasons (the nested time-series CV the original spec
+calls for, not yet built). Treat the current hyperparameters as "not
+obviously wrong" rather than "optimized."

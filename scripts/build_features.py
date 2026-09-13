@@ -22,6 +22,7 @@ from mlb.park_weather.park_factors import load_or_compute_park_factors
 from mlb.lineups.statcast_pull import load_or_fetch_batter_data
 from mlb.lineups.projections import add_asof_batter_projections
 from mlb.lineups.lineup_offense import build_lineup_offense_features, derive_starter_hand_by_team_game
+from mlb.park_weather.weather import load_or_fetch_weather, add_derived_weather_features
 
 
 def build_season(season: int, cfg, park_factor_seasons: list[int]) -> pd.DataFrame:
@@ -43,7 +44,7 @@ def build_season(season: int, cfg, park_factor_seasons: list[int]) -> pd.DataFra
         pg,
         sched,
         halflife_days=cfg.bullpen.halflife_days,
-        shrinkage_k_batters=cfg.pitcher_projection.shrinkage_k_batters,
+        shrinkage_k_batters=cfg.bullpen.shrinkage_k_batters,
         fatigue_lookback_days=cfg.bullpen.fatigue_lookback_days,
     )
     off = add_asof_team_offense(
@@ -65,7 +66,11 @@ def build_season(season: int, cfg, park_factor_seasons: list[int]) -> pd.DataFra
     starter_hand = derive_starter_hand_by_team_game(starters)
     lineup_off = build_lineup_offense_features(lineups, bproj, starter_hand)
 
-    gf = build_game_features(sched, sproj, off, bp, pf, lineup_offense=lineup_off)
+    game_pks = [int(x) for x in sched[sched["is_final"]]["game_pk"].tolist()]
+    weather_raw = load_or_fetch_weather(season, game_pks, raw_dir)
+    weather = add_derived_weather_features(weather_raw)
+
+    gf = build_game_features(sched, sproj, off, bp, pf, lineup_offense=lineup_off, weather=weather)
     gf["season"] = season
     return gf
 

@@ -15,6 +15,7 @@ def build_game_features(
     bullpen: pd.DataFrame,
     park_factors: pd.DataFrame | None = None,
     lineup_offense: pd.DataFrame | None = None,
+    weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     sched = schedule[schedule["is_final"] & schedule["home_score"].notna()].copy()
     sched["game_date"] = pd.to_datetime(sched["game_date"])
@@ -52,6 +53,17 @@ def build_game_features(
         df = df.merge(home_lo, left_on=["game_pk", "home_team"], right_on=["game_pk", "team"], how="left").drop(columns=["team"])
         df = df.merge(away_lo, left_on=["game_pk", "away_team"], right_on=["game_pk", "team"], how="left").drop(columns=["team"])
         df["diff_lineup_xwoba"] = df["home_lineup_proj_xwoba"] - df["away_lineup_proj_xwoba"]
+
+    if weather is not None and not weather.empty:
+        w = weather[["game_pk", "wind_effect", "temp_f_filled", "is_indoor_or_roof_closed"]]
+        df = df.merge(w, on="game_pk", how="left")
+        df["wind_effect"] = df["wind_effect"].fillna(0.0)
+        df["temp_f_filled"] = df["temp_f_filled"].fillna(72.0)
+        df["is_indoor_or_roof_closed"] = df["is_indoor_or_roof_closed"].fillna(False)
+    else:
+        df["wind_effect"] = 0.0
+        df["temp_f_filled"] = 72.0
+        df["is_indoor_or_roof_closed"] = False
 
     if park_factors is not None and not park_factors.empty:
         pf = park_factors[["venue_name", "home_team", "park_factor"]]

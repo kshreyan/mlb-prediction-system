@@ -21,3 +21,6 @@ data/processed/*
 # local secrets
 .env
 *.token
+
+# Claude Code harness-local state (not project data)
+.claude/
