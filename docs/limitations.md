@@ -71,14 +71,18 @@ never invented") is intentionally more important than filling in this box.
 If you have an odds API key, wire it into `mlb.data` and this becomes
 straightforward to add.
 
-## 4. Backtest coverage: 2023 (training pool) + 2024 (evaluated), not the full 2015+ history
+## 4. Backtest coverage: 2022-2024 (2024 evaluated), not the full 2015+ history
 
 The walk-forward backtest in this build covers the full 2024 season
-(2,429 games), trained on an expanding window seeded with the full 2023
-season. Extending to 2015+ is mechanical (`make features SEASON=<year>` for
-each year, then include earlier seasons in `--prior`), but was out of scope
-for the time budget of this build. Statcast data (the pitcher-peripheral
-foundation) only exists from 2015 onward regardless.
+(2,429 games, evaluated) and 2023 (2,430 games, also backtested — used both
+as 2024's training pool and, via its own 2022-warm-started walk-forward run,
+as ensemble/tuning validation data). 2022 was pulled in full (pitchers,
+batters/lineups, weather) specifically to support multi-season
+hyperparameter tuning and the ensemble's warm-up. Extending to 2015+ is
+mechanical (`make features SEASON=<year>` for each year, then include
+earlier seasons in `--prior`), but was out of scope for the time budget of
+this build. Statcast data (the pitcher-peripheral foundation) only exists
+from 2015 onward regardless.
 
 ## 5. Umpire tendencies, catcher framing splits, travel/rest beyond bullpen fatigue
 
@@ -103,21 +107,41 @@ split of ~1,200 games. We are reporting the raw simulation probabilities as
 the shipped output rather than the isotonic-recalibrated ones. See
 `README.md` for the numbers.
 
-## 8. The simulation model: close to, but still trailing, pitcher-adjusted Elo
+## 8. RESOLVED: the stacked ensemble decisively beats every baseline, including pitcher-adjusted Elo
 
-UPDATE after lineups + weather + multi-season hyperparameter tuning: the
-FINAL model (54.7% accuracy, Brier 0.2470, log loss 0.6872) is
-statistically tied with pitcher-adjusted Elo on accuracy (54.8%) and has
-closed roughly half the earlier Brier/log-loss gap to it (was 0.2474/0.6879
-pre-tuning; pitcher-adjusted Elo is 0.2466/0.6864). It now also clearly
-beats the simpler Elo-only baseline on Brier and log loss. See `README.md`
-§Results for the full before/after tables at every stage (lineup ablation,
-weather ablation, two tuning attempts). Not a decisive win over the
-strongest baseline, but real, substantial, multi-step progress from this
-session's additions — reported plainly rather than declared victory.
-Remaining likely fixes: PA-weighted lineup averaging (§1), tuning across
-more than two seasons (§9), and a proper stacked ensemble instead of
-picking one model.
+This was the single most important open finding through most of this
+build's history: the standalone simulation model, even after lineups,
+weather, and multi-season hyperparameter tuning, was only statistically
+tied with pitcher-adjusted Elo on accuracy (54.7% vs 54.8%) and still
+trailed it on Brier/log loss (0.2470/0.6872 vs 0.2466/0.6864).
+
+It's resolved by NOT picking one model. `mlb.ensemble.stacking` blends the
+simulation model, Elo-only, and pitcher-adjusted Elo on log-odds via a
+walk-forward logistic regression (`scripts/run_ensemble.py`), and the
+result decisively beats every component on every metric: 56.0% accuracy,
+Brier 0.2448, log loss 0.6826, ECE 0.0072 (2-6x better calibrated than any
+single component). See `README.md` §"Moneyline — stacked ensemble" for the
+full table and `tests/leakage/test_ensemble_leakage.py` for the leakage
+verification.
+
+What's still open:
+
+- **The ensemble covers moneyline only.** Elo and pitcher-adjusted-Elo
+  produce a single win probability, not a run distribution, so there's
+  nothing of theirs to blend with the simulation's run-line/totals output.
+  Extending stacking to those markets would need other run/total-producing
+  models to combine with — not yet built.
+- The in-sample diagnostic weight inspection (not the reported walk-forward
+  result — just a single global fit for interpretability) put a NEGATIVE
+  coefficient on the pitcher-adjusted-Elo term, likely a suppressor-variable
+  effect from its heavy overlap with the Elo term rather than a sign the
+  ensemble is doing something wrong (the held-out walk-forward performance
+  is what's actually reported and trusted). Worth a deeper look if the
+  ensemble is extended further.
+- Remaining likely further gains: PA-weighted lineup averaging (§1), tuning
+  across more than two seasons (§9), and adding more diverse component
+  models to the ensemble (e.g. a gradient-boosted-trees baseline directly
+  on the matchup features, as the original spec suggested).
 
 ## 9. Hyperparameter tuning: a failed single-season attempt, fixed by tuning across two seasons
 
