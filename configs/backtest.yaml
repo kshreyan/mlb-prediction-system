@@ -1,0 +1,38 @@
+# Backtest configuration.
+# Seasons must be fully or partially complete; the walk-forward backtest only
+# ever trains on games strictly before the date it predicts.
+seasons: [2023, 2024, 2025]
+
+# Regular season date bounds are looked up per-season from the MLB Stats API
+# schedule rather than hardcoded, since openers/closers shift year to year.
+
+data_dir: "data"
+random_seed: 42
+
+pitcher_projection:
+  # Exponentially-weighted rolling window (in days) over a pitcher's own
+  # Statcast game logs, computed strictly as-of the day before each start.
+  halflife_days: 45
+  # Minimum batters-faced before a pitcher's own sample is trusted much;
+  # below this, projections shrink hard toward the league-average prior.
+  shrinkage_k_batters: 250
+  min_prior_batters: 150000  # batters used to build the league prior per season
+
+bullpen:
+  halflife_days: 20
+  fatigue_lookback_days: 3
+
+team_offense:
+  # Team-level rolling runs/game is used as the current offense proxy (a
+  # shrinkage prior, not the primary signal — see docs/limitations.md for
+  # the planned confirmed-lineup upgrade).
+  halflife_days: 30
+  shrinkage_k_games: 12
+
+simulation:
+  n_sims: 20000
+  runs_per_team_distribution: "negative_binomial"
+
+calibration:
+  n_bins: 10
+  method: "isotonic"
