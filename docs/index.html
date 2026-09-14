@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MLB Prediction System — Results Dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #ffffff;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1: #2a78d6; /* blue — "ours" */
+    --series-2: #eb6834; /* orange — "market/baseline" */
+    --series-3: #1baf7a; /* aqua */
+    --series-4: #eda100; /* yellow */
+    --good:     #0ca30c;
+    --warning:  #fab219;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --surface-2:      #201f1e;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+      --good:     #0ca30c;
+      --warning:  #fab219;
+      --critical: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --surface-2:      #201f1e;
+    --page-plane:     #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  header { margin-bottom: 8px; }
+  h1 { font-size: 1.7rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-secondary); font-size: 0.98rem; max-width: 640px; }
+  .repo-link { font-size: 0.85rem; margin-top: 10px; }
+  .repo-link a { color: var(--series-1); text-decoration: none; }
+  .repo-link a:hover { text-decoration: underline; }
+
+  .honesty-banner {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 24px 0;
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+  }
+  .honesty-banner strong { color: var(--text-primary); }
+
+  section { margin: 40px 0; }
+  h2 {
+    font-size: 1.05rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--gridline);
+    padding-bottom: 8px;
+    margin-bottom: 18px;
+  }
+  h3 { font-size: 1rem; margin: 0 0 4px; }
+  .note { color: var(--text-secondary); font-size: 0.88rem; margin: 6px 0 16px; }
+
+  .stat-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 24px; }
+  .stat-tile {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    flex: 1 1 150px;
+    min-width: 130px;
+  }
+  .stat-tile .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .stat-tile .value { font-size: 1.5rem; font-weight: 600; margin-top: 4px; }
+  .stat-tile .sub { font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
+
+  .chart-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 18px;
+  }
+
+  .legend { display: flex; gap: 18px; font-size: 0.82rem; color: var(--text-secondary); margin: 8px 0 4px; flex-wrap: wrap; }
+  .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--gridline); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.highlight td { font-weight: 600; color: var(--text-primary); }
+
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--text-secondary); }
+  .axis-label { fill: var(--text-muted); font-size: 11px; }
+  .grid-line { stroke: var(--gridline); stroke-width: 1; }
+  .baseline-line { stroke: var(--baseline); stroke-width: 1; }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 1px solid var(--gridline);
+    font-size: 0.82rem;
+    color: var(--text-muted);
+  }
+  footer a { color: var(--series-1); }
+  code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>MLB Prediction System</h1>
+  <div class="subtitle">Moneyline · Total Runs · Run Line — honestly backtested, leak-tested, and measured against real closing-line odds. This page reports the 2024-season walk-forward holdout results as they actually came out, including where the model loses.</div>
+  <div class="repo-link">→ <a href="https://github.com/kshreyan/mlb-prediction-system">Source code &amp; full methodology on GitHub</a></div>
+</header>
+
+<div class="honesty-banner">
+  <strong>The honesty standard.</strong> MLB is the least predictable major sport. This system targets calibration and honest performance vs. realistic baselines, not raw accuracy — ~57–60% moneyline is a <em>great</em> result here, not a floor, and anything above ~62% is presumed leakage. Run line and totals near market breakeven is success, not failure. Every number below is from a real walk-forward backtest on the 2024 season (2,429 games), evaluated after 29 automated leakage tests confirmed no future information reaches any prediction.
+</div>
+
+<section id="headline">
+  <h2>Headline Results — 2024 Holdout</h2>
+  <div class="stat-row">
+    <div class="stat-tile"><div class="label">Ensemble Accuracy</div><div class="value">56.3%</div><div class="sub">moneyline, stacked ensemble</div></div>
+    <div class="stat-tile"><div class="label">Ensemble Brier</div><div class="value">0.2447</div><div class="sub">best of every model tested</div></div>
+    <div class="stat-tile"><div class="label">Ensemble ECE</div><div class="value">0.0095</div><div class="sub">calibration error</div></div>
+    <div class="stat-tile"><div class="label">CLV sample</div><div class="value">498</div><div class="sub">real closing-line games (~20.5% of 2024)</div></div>
+    <div class="stat-tile"><div class="label">Leakage tests</div><div class="value">29 / 29</div><div class="sub">all passing, CI-enforced</div></div>
+  </div>
+</section>
+
+<section id="moneyline">
+  <h2>Moneyline — Model Comparison</h2>
+  <p class="note">Lower Brier score is better. The stacked ensemble (simulation + Elo-only + pitcher-adjusted Elo, blended on log-odds via walk-forward logistic regression) beats every individual component on every metric.</p>
+  <div class="chart-card">
+    <svg viewBox="0 0 900 320" width="100%" height="auto" role="img" aria-label="Bar chart of Brier score by model, lower is better">
+      <!-- generated below by JS from real data -->
+      <g id="ml-bar-chart"></g>
+    </svg>
+  </div>
+</section>
+
+<section id="calibration">
+  <h2>Calibration — Ensemble Reliability Diagram</h2>
+  <p class="note">Each point is one probability bin: x = mean predicted probability in that bin, y = actual home-win rate. Points on the diagonal are perfectly calibrated. Point size reflects the number of games in that bin.</p>
+  <div class="chart-card">
+    <svg viewBox="0 0 640 480" width="100%" height="auto" style="max-width:520px;display:block;margin:0 auto" role="img" aria-label="Calibration reliability diagram, predicted vs actual probability">
+      <g id="calibration-chart"></g>
+    </svg>
+  </div>
+</section>
+
+<section id="clv">
+  <h2>CLV — Model vs. Real Closing-Line Market</h2>
+  <p class="note">A paid odds-API sample of 498 real 2024 games (9–14 US sportsbooks per game, de-vigged consensus). Lower Brier is better. The market wins on moneyline and run line — a modest gap, not a blowout — and the model is in a statistical dead heat with the market on totals.</p>
+  <div class="chart-card">
+    <svg viewBox="0 0 900 300" width="100%" height="auto" role="img" aria-label="Grouped bar chart comparing model and market Brier score across three markets">
+      <g id="clv-chart"></g>
+    </svg>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--series-1)"></span>Our model</span>
+      <span><span class="dot" style="background:var(--series-2)"></span>Real closing-line market</span>
+    </div>
+  </div>
+</section>
+
+<section id="tuning">
+  <h2>Hyperparameter Tuning — Four Attempts, Converging</h2>
+  <p class="note">Pitcher-projection halflife across four rounds of held-out, multi-season tuning (2019, 2021, 2022, 2023 as validation; 2024 untouched throughout). One early attempt (single-season) didn't transfer to the holdout; three multi-season attempts each confirmed or extended the same direction — a genuine sign of convergence rather than noise.</p>
+  <div class="chart-card">
+    <table>
+      <thead><tr><th>Attempt</th><th class="num">Pitcher halflife</th><th class="num">Batter halflife</th><th class="num">Team-off. halflife</th><th class="num">2024 holdout accuracy</th></tr></thead>
+      <tbody id="tuning-table"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="markets">
+  <h2>Totals &amp; Run Line</h2>
+  <div class="stat-row">
+    <div class="stat-tile"><div class="label">Totals MAE — model</div><div class="value">3.425</div><div class="sub">runs, simulation (shipped)</div></div>
+    <div class="stat-tile"><div class="label">Totals MAE — direct Ridge</div><div class="value">3.413</div><div class="sub">best single model, not shipped (see notes)</div></div>
+    <div class="stat-tile"><div class="label">Totals MAE — naive</div><div class="value">3.451</div><div class="sub">as-of league-average baseline</div></div>
+    <div class="stat-tile"><div class="label">Run line cover rate</div><div class="value">35.3%</div><div class="sub">actual, vs. 34.9% predicted</div></div>
+  </div>
+  <p class="note">One-run games remain underestimated (27.8% actual vs. 19.6% simulated) — a named, open target for the run-environment dispersion model. A direct Ridge regression on the matchup features is actually the single best totals predictor in this build, edging out the simulation — but isn't the shipped output, since it can't jointly produce moneyline/run-line the way the simulation does. Full reasoning in <a href="limitations.md">docs/limitations.md</a>.</p>
+</section>
+
+<footer>
+  Research project — not betting advice. Full methodology, every honest negative result, and the complete leakage-testing discipline are documented in <a href="https://github.com/kshreyan/mlb-prediction-system">the repository README</a> and <a href="limitations.md">docs/limitations.md</a>. Generated from a real walk-forward backtest; predictions are immutable and results are graded separately, per this project's data-honesty policy.
+</footer>
+
+</div>
+
+<script>
+const DATA = {
+  ml_models: [
+    {name:'Better-record (Log5)', brier:0.2646, acc:50.3},
+    {name:'Home-field-always', brier:0.2494, acc:52.8},
+    {name:'Elo-only', brier:0.2483, acc:55.0},
+    {name:'Simulation (ours)', brier:0.2470, acc:55.4},
+    {name:'Pitcher-adjusted Elo', brier:0.2455, acc:54.9},
+    {name:'Stacked Ensemble (final)', brier:0.2447, acc:56.3, highlight:true},
+  ],
+  reliability: [
+    {bin:'0.3–0.4', predicted:0.369, actual:0.359, n:78},
+    {bin:'0.4–0.5', predicted:0.462, actual:0.455, n:868},
+    {bin:'0.5–0.6', predicted:0.545, actual:0.550, n:1240},
+    {bin:'0.6–0.7', predicted:0.627, actual:0.668, n:229},
+    {bin:'0.7–0.8', predicted:0.730, actual:0.643, n:14},
+  ],
+  clv: [
+    {market:'Moneyline', n:498, model:0.2410, mkt:0.2382},
+    {market:'Run line', n:292, model:0.2440, mkt:0.2404},
+    {market:'Totals', n:498, model:0.2500, mkt:0.2502},
+  ],
+  tuning: [
+    {attempt:'Defaults', pitcher:45, batter:60, teamoff:30, acc:54.5},
+    {attempt:'Attempt 1 (2023-only) — did not transfer', pitcher:75, batter:100, teamoff:30, acc:53.8},
+    {attempt:'Attempt 2 (+2022)', pitcher:75, batter:100, teamoff:50, acc:54.5},
+    {attempt:'Attempt 3 (+2021)', pitcher:110, batter:140, teamoff:70, acc:55.6},
+    {attempt:'Attempt 4 (+2019, shipped)', pitcher:150, batter:140, teamoff:70, acc:55.4},
+  ],
+};
+
+const svgns = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, text) {
+  const e = document.createElementNS(svgns, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+const css = getComputedStyle(document.documentElement);
+function cssVar(name) { return css.getPropertyValue(name).trim(); }
+
+// ---- Moneyline bar chart (horizontal bars, Brier score, lower=better) ----
+(function() {
+  const g = document.getElementById('ml-bar-chart');
+  const W = 900, H = 320, ML = 190, MR = 40, MT = 16, MB = 30;
+  const plotW = W - ML - MR, plotH = H - MT - MB;
+  const rows = DATA.ml_models;
+  const rowH = plotH / rows.length;
+  const minV = 0.235, maxV = 0.268;
+  const x = v => ML + ((v - minV) / (maxV - minV)) * plotW;
+
+  // gridlines
+  for (let v = 0.24; v <= 0.265; v += 0.005) {
+    g.appendChild(el('line', {x1:x(v), x2:x(v), y1:MT, y2:MT+plotH, class:'grid-line'}));
+    g.appendChild(el('text', {x:x(v), y:MT+plotH+18, 'text-anchor':'middle', class:'axis-label'}, v.toFixed(3)));
+  }
+  rows.forEach((r, i) => {
+    const y = MT + i * rowH + rowH * 0.22;
+    const barH = rowH * 0.56;
+    const bx = x(minV);
+    const bw = x(r.brier) - bx;
+    const color = r.highlight ? cssVar('--series-1') : cssVar('--series-3');
+    const bar = el('rect', {x:bx, y, width:Math.max(bw,2), height:barH, rx:4, fill:color});
+    bar.appendChild(el('title', {}, `${r.name}: Brier ${r.brier.toFixed(4)}, accuracy ${r.acc}%`));
+    g.appendChild(bar);
+    g.appendChild(el('text', {x:ML-10, y:y+barH/2+4, 'text-anchor':'end', 'font-size':'12.5'}, r.name));
+    g.appendChild(el('text', {x:bx+bw+8, y:y+barH/2+4, 'font-size':'12', fill: cssVar('--text-primary')}, r.brier.toFixed(4)));
+  });
+  g.appendChild(el('text', {x: ML + plotW/2, y: H-2, 'text-anchor':'middle', class:'axis-label'}, 'Brier score (lower = better)'));
+})();
+
+// ---- Calibration reliability diagram (scatter + diagonal) ----
+(function() {
+  const g = document.getElementById('calibration-chart');
+  const W = 640, H = 480, M = 56;
+  const plotSize = Math.min(W,H) - 2*M;
+  const ox = M, oy = H - M - plotSize;
+  const sx = v => ox + v * plotSize;
+  const sy = v => oy + (1 - v) * plotSize;
+
+  // grid + diagonal
+  for (let v = 0; v <= 1.001; v += 0.2) {
+    g.appendChild(el('line', {x1:sx(v), x2:sx(v), y1:oy, y2:oy+plotSize, class:'grid-line'}));
+    g.appendChild(el('line', {x1:ox, x2:ox+plotSize, y1:sy(v), y2:sy(v), class:'grid-line'}));
+    g.appendChild(el('text', {x:sx(v), y:oy+plotSize+20, 'text-anchor':'middle', class:'axis-label'}, v.toFixed(1)));
+    g.appendChild(el('text', {x:ox-10, y:sy(v)+4, 'text-anchor':'end', class:'axis-label'}, v.toFixed(1)));
+  }
+  g.appendChild(el('line', {x1:sx(0.3), y1:sy(0.3), x2:sx(0.8), y2:sy(0.8), stroke: cssVar('--baseline'), 'stroke-width':1.5, 'stroke-dasharray':'4,4'}));
+  g.appendChild(el('line', {x1:ox, x2:ox+plotSize, y1:oy+plotSize, y2:oy+plotSize, class:'baseline-line'}));
+  g.appendChild(el('line', {x1:ox, x2:ox, y1:oy, y2:oy+plotSize, class:'baseline-line'}));
+
+  const maxN = Math.max(...DATA.reliability.map(d=>d.n));
+  DATA.reliability.forEach(d => {
+    const r = 6 + 20 * Math.sqrt(d.n / maxN);
+    const c = el('circle', {cx:sx(d.predicted), cy:sy(d.actual), r, fill: cssVar('--series-1'), opacity:0.85});
+    c.appendChild(el('title', {}, `Predicted ${d.bin}: mean predicted ${d.predicted.toFixed(3)}, actual ${d.actual.toFixed(3)} (n=${d.n})`));
+    g.appendChild(c);
+  });
+  g.appendChild(el('text', {x: ox+plotSize/2, y: H-8, 'text-anchor':'middle', class:'axis-label'}, 'Mean predicted probability'));
+  g.appendChild(el('text', {x: 14, y: oy+plotSize/2, 'text-anchor':'middle', class:'axis-label', transform:`rotate(-90 14 ${oy+plotSize/2})`}, 'Actual home-win rate'));
+})();
+
+// ---- CLV grouped bar chart ----
+(function() {
+  const g = document.getElementById('clv-chart');
+  const W = 900, H = 300, ML = 50, MR = 20, MT = 20, MB = 60;
+  const plotW = W - ML - MR, plotH = H - MT - MB;
+  const groups = DATA.clv;
+  const groupW = plotW / groups.length;
+  const minV = 0.235, maxV = 0.255;
+  const y = v => MT + plotH - ((v - minV) / (maxV - minV)) * plotH;
+  const zero = MT + plotH;
+
+  for (let v = 0.235; v <= 0.255; v += 0.005) {
+    g.appendChild(el('line', {x1:ML, x2:ML+plotW, y1:y(v), y2:y(v), class:'grid-line'}));
+    g.appendChild(el('text', {x:ML-8, y:y(v)+4, 'text-anchor':'end', class:'axis-label'}, v.toFixed(3)));
+  }
+  groups.forEach((d, i) => {
+    const cx = ML + i*groupW + groupW/2;
+    const barW = 46;
+    const b1 = el('rect', {x:cx-barW-4, y:y(d.model), width:barW, height: zero-y(d.model), rx:4, fill: cssVar('--series-1')});
+    b1.appendChild(el('title', {}, `Model, ${d.market}: Brier ${d.model.toFixed(4)} (n=${d.n})`));
+    g.appendChild(b1);
+    const b2 = el('rect', {x:cx+4, y:y(d.mkt), width:barW, height: zero-y(d.mkt), rx:4, fill: cssVar('--series-2')});
+    b2.appendChild(el('title', {}, `Market, ${d.market}: Brier ${d.mkt.toFixed(4)} (n=${d.n})`));
+    g.appendChild(b2);
+    g.appendChild(el('text', {x:cx, y:H-30, 'text-anchor':'middle', 'font-size':'13', fill: cssVar('--text-primary')}, d.market));
+    g.appendChild(el('text', {x:cx, y:H-14, 'text-anchor':'middle', class:'axis-label'}, `n=${d.n}`));
+  });
+})();
+
+// ---- Tuning progression table ----
+(function() {
+  const tbody = document.getElementById('tuning-table');
+  DATA.tuning.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    if (i === DATA.tuning.length - 1) tr.className = 'highlight';
+    tr.innerHTML = `<td>${r.attempt}</td><td class="num">${r.pitcher}d</td><td class="num">${r.batter}d</td><td class="num">${r.teamoff}d</td><td class="num">${r.acc}%</td>`;
+    tbody.appendChild(tr);
+  });
+})();
+</script>
+</body>
+</html>
