@@ -18,13 +18,28 @@ Brier/log loss (see README §Results, "Lineup ablation").
 
 What's still missing:
 
-- **Live/future predictions still need real pre-game confirmed lineups.**
-  The backtest uses the ACTUAL lineup that played (the real ground truth,
-  legitimate for backtesting since a team's real batting order is knowable
-  from the lineup card ~1-3 hours before first pitch in the vast majority of
-  cases). But for TODAY's slate, that data doesn't exist yet in this build —
-  you'd need to pull the Stats API's pre-game confirmed-lineup endpoint,
-  which updates once lineups are posted. Not yet wired up.
+- **RESOLVED (ingestion only): live confirmed-lineup fetching is now real.**
+  `mlb.lineups.live` queries the MLB Stats API's `game` endpoint for a
+  given game_pk and returns real probable pitchers (available far ahead of
+  game time) and the confirmed batting order (9 real batter IDs/names, only
+  once actually posted — `liveData.boxscore.teams.<side>.battingOrder`
+  stays empty before that). Verified against real live data on 2026-09-14's
+  actual slate: correctly reported `lineups_confirmed: False` with real
+  probable-pitcher names for not-yet-started games, and real, correct
+  batting orders (actual current MLB players) for that day's completed
+  games. Unit-tested with mocked API responses
+  (`tests/unit/test_live_lineups.py`) so the "not posted yet" vs. "posted"
+  distinction is verified deterministically, not just by eyeballing live
+  output once.
+
+  **What's still missing to reach a full live prediction pipeline:**
+  generating an actual prediction for today's games additionally requires
+  as-of-date pitcher/bullpen/batter projections computed from the CURRENT
+  season's own data — which means pulling 2025 and 2026 Statcast/lineup/
+  weather data (this build's projections only cover 2019/2021-2024). That's
+  a separate, larger data-pull task, not attempted here; this session
+  delivered the ingestion capability itself, tested and demonstrated
+  working on real current games, not the end-to-end live pipeline.
 - **RESOLVED: batters are now PA-weighted, not averaged equally.**
   `compute_pa_weights_by_slot` computes real empirical plate-appearances
   per batting-order slot from prior seasons only (leadoff hitters average
@@ -70,17 +85,52 @@ grading, though technically a pre-game forecast would sometimes differ from
 the eventual actual reading — a subtlety worth flagging for anyone building
 the live pipeline).
 
-## 3. No market odds — CLV is not measured
+## 3. No market odds — CLV is not measured (actively investigated, still unresolved)
 
 CLV vs. the closing line is described in the spec as "the decisive and
-humbling benchmark." We do not have a free, reliable historical odds source
-integrated. Building `mlb.data` odds ingestion honestly requires either a
-paid odds API key or a licensed historical dataset. Rather than fabricate
-odds or approximate them from something else, **this system reports no CLV
-number at all** — the honest-data policy in the spec ("missing → unavailable,
-never invented") is intentionally more important than filling in this box.
-If you have an odds API key, wire it into `mlb.data` and this becomes
-straightforward to add.
+humbling benchmark." We looked specifically for a free, currently-accessible
+historical MLB odds source before concluding this couldn't be closed
+cheaply, rather than assuming none existed:
+
+- **sportsbookreviewsonline.com** — the historically-canonical free source
+  for MLB closing-line spreadsheets (moneyline, run line, totals) used
+  across the sports-analytics community for years. Its historical-archive
+  pages now 404 / the domain has been repurposed as a generic sportsbook
+  affiliate/marketing site. The free archive appears gone.
+- **GitHub scrapers** (e.g. `ArnavSaraogi/mlb-odds-scraper`) — checked
+  directly via the GitHub API. These are scraper CODE against
+  sportsbookreviewsonline.com (now broken per above), not committed
+  datasets — a search-engine summary claiming a ready-to-download 76MB
+  dataset in that repo did not hold up when the actual repo contents were
+  checked (only ~5KB of Python scripts, no data files). A reminder to
+  verify claims about data availability directly rather than trust a
+  search summary.
+- **Kaggle** (`christophertreasure/major-league-baseball-vegas-data`) —
+  covers roughly 2012-2021 per its listing (JS-rendered page, couldn't be
+  verified further without a Kaggle account), so it wouldn't cover most of
+  this project's 2022-2024 evaluation seasons anyway, and would need a
+  Kaggle account/API credentials this environment doesn't have.
+- **The Odds API** (free tier) — genuinely free, no card required, but
+  500 credits/month with historical-odds calls costing 10x the credits of
+  a live call. That's roughly enough for a handful of historical
+  data-points a month — nowhere near sufficient to backtest CLV across
+  thousands of games in 2021-2024. It COULD support a LIVE (today's slate)
+  odds feed going forward, which is a different, smaller, genuinely
+  feasible project — but that requires the user to create an account and
+  provide an API key, which is their decision, not something to do
+  autonomously.
+- **Paid options** (Scottfree Analytics, SportsData.io, Sports Insights) —
+  all real, all would work, all cost money this build doesn't have budget
+  for.
+
+Conclusion: **still no CLV number in this build.** Rather than lower the
+bar (scrape a now-broken site anyway, use a wrong-date-range dataset, or
+approximate odds from something else), the honest-data policy in the spec
+("missing → unavailable, never invented") wins. If the user obtains a paid
+odds API key or a licensed historical dataset, wiring it into `mlb.data`
+is straightforward — the schema this system's own data modules already
+follow (`source`, `fetched_at`, `is_closing` flags) was designed with this
+in mind from the start.
 
 ## 4. Backtest coverage: 2021-2024 (2024 evaluated), not the full 2015+ history
 

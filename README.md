@@ -48,7 +48,7 @@ than helped, and the totals ensemble described above.
   team's, or bullpen's projection for game N uses ONLY games strictly before
   game N, exponentially time-weighted and shrunk toward a same-date league
   prior that is ITSELF computed from only strictly-prior games. `tests/leakage/`
-  has 21 passing tests enforcing this, including two real bugs caught and
+  has 20 passing leakage tests enforcing this, including two real bugs caught and
   fixed during this build (see "Leakage bugs found and fixed" below).
 - **Confirmed lineups are real, not a team-level proxy.** The actual
   starting lineup (9 batters, batting order) is derived directly from
@@ -75,9 +75,18 @@ than helped, and the totals ensemble described above.
   best-performing model in the whole build; run line's improves Brier/log
   loss/calibration too. A totals ensemble was also tried and honestly
   rejected — see Results.
-- **Nothing is fabricated.** No odds data exists in this build because we
-  don't have a licensed/paid source — rather than approximate it, CLV is
-  reported as unavailable. See `docs/limitations.md` §3.
+- **Live confirmed-lineup ingestion** (`mlb.lineups.live`): real-time
+  fetching of probable pitchers and confirmed batting orders from the MLB
+  Stats API, verified against actual current games — reports "not posted
+  yet" honestly rather than guessing a lineup. See `docs/limitations.md`
+  §1 for what's needed beyond ingestion to reach a full live pipeline.
+- **Nothing is fabricated — including when we went looking for odds data
+  and came up empty.** We actively searched for a free, currently-usable
+  historical MLB odds source (not just assumed none existed) — the
+  once-canonical free archive has gone offline/been repurposed, and every
+  live alternative found was either paid, wrong date range, or lacked real
+  committed data despite claims otherwise. CLV is reported as unavailable,
+  not approximated. See `docs/limitations.md` §3 for the full investigation.
 
 ## Architecture
 
@@ -86,8 +95,9 @@ src/mlb/
   data/            Stats API schedule ingestion, team ID mapping
   pitchers/        Statcast pull + aggregation, as-of-date pitcher projections
   bullpen/         As-of-date team bullpen quality + fatigue/workload
-  lineups/         Actual-lineup extraction, as-of-date batter platoon-split
-                   projections, lineup-vs-opposing-starter-hand aggregation
+  lineups/         Actual-lineup extraction (backtest), as-of-date batter
+                   platoon-split projections, lineup-vs-opposing-starter-hand
+                   aggregation, + live.py (real-time confirmed-lineup fetch)
   features/        Team-offense proxy (fallback), as-of-date utilities, matchup dataset assembly
   park_weather/    Empirical park factors (real game logs, prior-seasons-only) + real per-game weather
   simulation/      Poisson-mean regression + NB dispersion, Monte Carlo game engine
@@ -99,7 +109,7 @@ src/mlb/
   backtest/        Walk-forward (expanding-window) backtest loop
   evaluation/      Brier/log-loss/ECE/reliability/totals-MAE metrics
 tests/
-  leakage/         The anti-leakage test suite (21 tests, all passing)
+  leakage/         The anti-leakage test suite (20 tests, all passing)
   unit/            Regression tests for real data artifacts found along the way
 scripts/
   build_features.py     Build one season's leak-free game-feature dataset
@@ -440,7 +450,7 @@ regression overfit on ~1,200 training games. We ship the raw probabilities.
 
 ## Leakage bugs found and fixed during this build
 
-`tests/leakage/` has 21 passing tests. Two real leakage bugs were caught by
+`tests/leakage/` has 20 passing tests. Two real leakage bugs were caught by
 the test suite before they could taint results, and are worth naming
 because they're the kind of subtle bug this whole architecture exists to
 prevent:
@@ -467,7 +477,7 @@ regression-tested in `tests/unit/test_schedule_dedup.py`).
 
 ```bash
 make setup                                   # venv + editable install
-make test                                    # full suite (21 tests)
+make test                                    # full suite (24 tests)
 make leakage-test                            # just the anti-leakage gate
 make features SEASON=2021                    # build one season's dataset (incl. lineups)
 make features SEASON=2022                    # (2021+2022 support hyperparameter tuning/warm-up)
@@ -484,7 +494,7 @@ python scripts/run_market_ensembles.py       # build + evaluate the totals/run-l
 
 - [x] Full pipeline runs raw data → predictions (backtest form; live daily
       slate deployment is not yet built — see limitations).
-- [x] Walk-forward backtest, zero leakage (21 leakage tests passing,
+- [x] Walk-forward backtest, zero leakage (20 leakage tests passing,
       including 2 real bugs caught and fixed during this build).
 - [~] Predictions driven by starter + bullpen + confirmed lineups —
       **implemented and backtested** (actual lineups derived from
