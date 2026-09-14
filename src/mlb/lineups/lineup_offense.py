@@ -78,10 +78,25 @@ def build_lineup_offense_features(
     )
 
     # A batter who didn't face that exact hand in that game (rare — e.g. a
-    # pinch-hitter who only saw a mid-game reliever of the other hand)
-    # falls back to the neutral league prior rather than being dropped,
-    # so a lineup's average isn't skewed by missing bench bats.
-    merged["proj_xwoba_filled"] = merged["proj_xwoba"].fillna(_NEUTRAL_XWOBA_PRIOR)
+    # pinch-hitter who only saw a mid-game reliever of the other hand) gets
+    # a smarter fallback than a flat constant, in two stages:
+    #   1. his projection vs. whatever hand he DID face in that same game
+    #      (a starter always batted at least once, so this recovers almost
+    #      every case — still his own real, as-of-date projection, just
+    #      not hand-matched);
+    #   2. only if that's ALSO missing (no batter_proj row for him at all
+    #      that game — a true edge case) does it fall back to the flat
+    #      neutral league prior.
+    any_hand_proj = (
+        batter_proj.rename(columns={"batting_team": "team"})
+        .sort_values("n_prior_pa", ascending=False)
+        .drop_duplicates(subset=["game_pk", "team", "batter"], keep="first")
+        [["game_pk", "team", "batter", "proj_xwoba"]]
+        .rename(columns={"proj_xwoba": "proj_xwoba_any_hand"})
+    )
+    merged = merged.merge(any_hand_proj, on=["game_pk", "team", "batter"], how="left")
+
+    merged["proj_xwoba_filled"] = merged["proj_xwoba"].fillna(merged["proj_xwoba_any_hand"]).fillna(_NEUTRAL_XWOBA_PRIOR)
 
     if pa_weights_by_slot:
         merged["_pa_weight"] = merged["batting_order_slot"].map(pa_weights_by_slot).fillna(

@@ -34,10 +34,15 @@ What's still missing:
   accuracy, with a modest calibration improvement on the final ensemble
   (ECE 0.0072 → 0.0058). Kept for the honesty win even though the
   performance win was modest.
-- **A batter not found for the exact opposing-hand split that game falls
-  back to a flat neutral prior (0.31)** rather than a smarter estimate (e.g.
-  from his overall, hand-agnostic history). Rare in practice (only ~0.4% of
-  lineup slots hit this in the 2024 backtest) but worth tightening.
+- **RESOLVED: a batter missing the exact opposing-hand split now falls
+  back to his own projection vs. whichever hand he DID face that same game**
+  (a starter always batted at least once, so this recovers nearly every
+  case) before falling back further to the flat neutral prior (0.31) — only
+  for the residual handful of games where even that's unavailable. Effect
+  was small, as expected given only ~0.4% of lineup slots were affected:
+  standalone simulation accuracy +0.2pp, ensemble accuracy +0.1-0.2pp,
+  Brier/log loss marginally better, ECE essentially a wash. A real
+  methodological improvement with a correspondingly small measured effect.
 - Lineup-level offense did NOT move the totals-runs prediction (MAE was
   flat to slightly worse) — the win-probability split benefited more than
   the total-runs mean did. Worth investigating further.
