@@ -85,52 +85,73 @@ grading, though technically a pre-game forecast would sometimes differ from
 the eventual actual reading — a subtlety worth flagging for anyone building
 the live pipeline).
 
-## 3. No market odds — CLV is not measured (actively investigated, still unresolved)
+## 3. RESOLVED: CLV is now measured, with real closing-line data, on a real sample
 
-CLV vs. the closing line is described in the spec as "the decisive and
-humbling benchmark." We looked specifically for a free, currently-accessible
-historical MLB odds source before concluding this couldn't be closed
-cheaply, rather than assuming none existed:
+We first investigated free sources (documented for posterity below) and
+found none usable. The user then provided a paid The Odds API key, which
+changed the picture.
 
+**What was checked and ruled out first**, so this isn't re-litigated
+blindly later:
 - **sportsbookreviewsonline.com** — the historically-canonical free source
-  for MLB closing-line spreadsheets (moneyline, run line, totals) used
-  across the sports-analytics community for years. Its historical-archive
-  pages now 404 / the domain has been repurposed as a generic sportsbook
-  affiliate/marketing site. The free archive appears gone.
+  for MLB closing-line spreadsheets. Its archive pages now 404 / the
+  domain has been repurposed as a generic affiliate site. Gone.
 - **GitHub scrapers** (e.g. `ArnavSaraogi/mlb-odds-scraper`) — checked
-  directly via the GitHub API. These are scraper CODE against
-  sportsbookreviewsonline.com (now broken per above), not committed
-  datasets — a search-engine summary claiming a ready-to-download 76MB
-  dataset in that repo did not hold up when the actual repo contents were
-  checked (only ~5KB of Python scripts, no data files). A reminder to
-  verify claims about data availability directly rather than trust a
+  directly via the GitHub API: scraper CODE against the now-broken site
+  above, not a committed dataset, despite a search-engine summary claiming
+  otherwise. Verify data-availability claims directly; don't trust a
   search summary.
 - **Kaggle** (`christophertreasure/major-league-baseball-vegas-data`) —
-  covers roughly 2012-2021 per its listing (JS-rendered page, couldn't be
-  verified further without a Kaggle account), so it wouldn't cover most of
-  this project's 2022-2024 evaluation seasons anyway, and would need a
-  Kaggle account/API credentials this environment doesn't have.
-- **The Odds API** (free tier) — genuinely free, no card required, but
-  500 credits/month with historical-odds calls costing 10x the credits of
-  a live call. That's roughly enough for a handful of historical
-  data-points a month — nowhere near sufficient to backtest CLV across
-  thousands of games in 2021-2024. It COULD support a LIVE (today's slate)
-  odds feed going forward, which is a different, smaller, genuinely
-  feasible project — but that requires the user to create an account and
-  provide an API key, which is their decision, not something to do
-  autonomously.
-- **Paid options** (Scottfree Analytics, SportsData.io, Sports Insights) —
-  all real, all would work, all cost money this build doesn't have budget
-  for.
+  covers ~2012-2021, missing most of this project's 2022-2024 evaluation
+  window, and needs Kaggle credentials this environment lacked.
+- **The Odds API free tier** — real, but 500 credits/month with historical
+  calls at 10x cost — nowhere near enough for backtesting.
 
-Conclusion: **still no CLV number in this build.** Rather than lower the
-bar (scrape a now-broken site anyway, use a wrong-date-range dataset, or
-approximate odds from something else), the honest-data policy in the spec
-("missing → unavailable, never invented") wins. If the user obtains a paid
-odds API key or a licensed historical dataset, wiring it into `mlb.data`
-is straightforward — the schema this system's own data modules already
-follow (`source`, `fetched_at`, `is_closing` flags) was designed with this
-in mind from the start.
+**What actually worked**: a paid The Odds API key (first key provided was
+deactivated — cancellation or failed payment; a second key worked, 20,000
+credits). Historical odds cost real credits (~33-38 per game for
+moneyline+run-line+totals+de-vig at 3-market resolution), and a full 2024
+season (2,429 games) would cost far more than the available budget — so
+`scripts/pull_historical_odds.py` pulls a **systematic sample of 498 games
+(~20.5% of the 2024 season)**, evenly spread across the season for
+unbiased temporal coverage, each with a snapshot taken 8 minutes before
+that specific game's own first pitch (a genuine closing line, not a stale
+mid-day price) from a real board of 9-14 US sportsbooks (FanDuel,
+DraftKings, BetMGM, Bovada, and others), de-vigged to a fair consensus
+probability. The API key lives in `.env` (gitignored, never committed);
+raw odds data lives in `data/raw/odds/` (also gitignored, like all raw
+data in this project).
+
+**Result** (`scripts/compute_clv.py`, comparing our FINAL shipped models —
+the moneyline/run-line ensembles, and the simulation re-queried at the
+market's own total line — against the real closing-line market, on the
+matched sample):
+
+| Market | Model Brier | Market Brier | Model log loss | Market log loss |
+|---|---|---|---|---|
+| Moneyline (n=498) | 0.2410 | 0.2382 | 0.6749 | 0.6693 |
+| Run line, home-favored subset (n=292) | 0.2440 | 0.2404 | 0.6818 | 0.6738 |
+| Totals, re-simulated at market's line (n=498) | 0.2500 | 0.2502 | 0.6945 | 0.6935 |
+
+**Honest read:** the market is sharper than our model on moneyline and run
+line (a modest gap, not a blowout — MLB closing lines are among the
+sharpest in sports, exactly as the spec warns) — no edge is demonstrated
+there. On totals, the model is in a statistical dead heat with the market
+(0.2500 vs. 0.2502 Brier — a difference smaller than sample noise) — which
+is precisely the "totals near market breakeven" outcome the spec names as
+a good, realistic result. This is the honest, sample-sized answer to the
+spec's "decisive and humbling benchmark," not a full-season claim: run-line
+CLV further excludes 206 of 498 games (home +1.5 / away-favored games)
+because our saved run-line output isn't directly comparable to that side
+of the market without re-deriving from the full margin distribution — a
+real scope limit, stated rather than papered over with a mismatched
+number.
+
+Extending this to full-season coverage, or to 2021-2023 for a
+walk-forward CLV trend over time, is mechanical but would need
+substantially more odds-API budget (roughly 2,429 games/season x ~35
+credits = ~85,000 credits for one full season at 3-market resolution) —
+not attempted here.
 
 ## 4. Backtest coverage: 2019, 2021-2024 pulled (2024 evaluated), not the full 2015+ history
 

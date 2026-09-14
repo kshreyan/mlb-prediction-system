@@ -33,7 +33,13 @@ a first, single-season hyperparameter tuning pass looked good on its
 validation split but didn't transfer to the 2024 holdout (fixed by tuning
 across 4 seasons instead of 1), isotonic post-hoc calibration made
 calibration worse not better, a 4th (GBM) ensemble component hurt rather
-than helped, and the totals ensemble described above.
+than helped, and the totals ensemble described above. **CLV against real
+closing-line odds (a paid-API-funded, 498-game sample of 2024) is now
+measured too: the market beats our model on moneyline and run line — no
+edge demonstrated, stated plainly — while the model is in a genuine
+statistical dead heat with the market on totals**, exactly the realistic
+"near market breakeven" outcome this project's honesty standard describes
+as a good result.
 
 ## What's real here
 
@@ -80,19 +86,22 @@ than helped, and the totals ensemble described above.
   Stats API, verified against actual current games — reports "not posted
   yet" honestly rather than guessing a lineup. See `docs/limitations.md`
   §1 for what's needed beyond ingestion to reach a full live pipeline.
-- **Nothing is fabricated — including when we went looking for odds data
-  and came up empty.** We actively searched for a free, currently-usable
-  historical MLB odds source (not just assumed none existed) — the
-  once-canonical free archive has gone offline/been repurposed, and every
-  live alternative found was either paid, wrong date range, or lacked real
-  committed data despite claims otherwise. CLV is reported as unavailable,
-  not approximated. See `docs/limitations.md` §3 for the full investigation.
+- **CLV is now measured, with real closing-line data.** After free sources
+  turned up nothing usable (investigated, not assumed — see
+  `docs/limitations.md` §3), a paid The Odds API key pulled real closing
+  lines (9-14 real US sportsbooks, de-vigged) for a systematic 498-game
+  sample (~20.5%) of the 2024 season. Honest result: the market is sharper
+  than our model on moneyline and run line (a modest gap, not a blowout),
+  and the model is in a statistical dead heat with the market on totals
+  (0.2500 vs. 0.2502 Brier) — exactly the "totals near market breakeven"
+  outcome the spec names as a good, realistic result. See Results below.
 
 ## Architecture
 
 ```
 src/mlb/
-  data/            Stats API schedule ingestion, team ID mapping
+  data/            Stats API schedule ingestion, team ID mapping, real
+                   historical closing-line odds (mlb.data.odds)
   pitchers/        Statcast pull + aggregation, as-of-date pitcher projections
   bullpen/         As-of-date team bullpen quality + fatigue/workload
   lineups/         Actual-lineup extraction (backtest), as-of-date batter
@@ -120,6 +129,8 @@ scripts/
   run_ensemble.py         Build + evaluate the moneyline stacked ensemble
   run_market_ensembles.py Build + evaluate the totals and run-line ensembles
   run_gbm_baseline.py     Generate the GBM baseline (moneyline 4th-component experiment)
+  pull_historical_odds.py Pull a real closing-line odds sample (needs ODDS_API_KEY in .env)
+  compute_clv.py          Compute honest CLV vs. the pulled real closing lines
 ```
 
 ## How the model works
@@ -476,6 +487,45 @@ once, globally) doesn't capture the real fat-tailed frequency of close
 games. Concrete target for next iteration: a per-team or
 run-environment-dependent dispersion instead of one global value.
 
+### CLV vs. the real closing line — the spec's "decisive and humbling benchmark"
+
+A paid The Odds API key made this possible after free sources came up
+empty (see `docs/limitations.md` §3 for that investigation). Budget
+(20,000 credits) didn't cover the full 2,429-game 2024 season at 3-market
+resolution (~85,000 credits), so `scripts/pull_historical_odds.py` pulled
+a systematic, evenly-spread sample of 498 games (~20.5% of the season),
+each with a real closing-line snapshot (9-14 US sportsbooks — FanDuel,
+DraftKings, BetMGM, Bovada, and others — taken 8 minutes before that
+game's own first pitch, de-vigged to a fair consensus probability) —
+genuinely real, sample-sized, not full-season.
+
+| Market | Model Brier | Market Brier | Model log loss | Market log loss |
+|---|---|---|---|---|
+| Moneyline (n=498) | 0.2410 | 0.2382 | 0.6749 | 0.6693 |
+| Run line, home-favored subset (n=292) | 0.2440 | 0.2404 | 0.6818 | 0.6738 |
+| **Totals, re-simulated at market's line (n=498)** | **0.2500** | **0.2502** | **0.6945** | **0.6935** |
+
+**Honest read:** the market beats our model on moneyline and run line — a
+modest gap (Brier differences of 0.0028 and 0.0036), not a blowout, but no
+edge is demonstrated there. MLB closing lines are among the sharpest in
+sports, exactly as the spec warns, and this result says plainly that our
+model hasn't beaten them. On TOTALS, the model is in a genuine statistical
+dead heat with the market (0.2500 vs. 0.2502 — a gap smaller than sample
+noise at n=498) — this is precisely the "totals near market breakeven"
+outcome the spec names as a good, realistic result, achieved with real
+data rather than assumed. The run-line comparison further excludes 206 of
+498 games (where the market favored the away team, i.e. home was +1.5) —
+our saved run-line output represents P(home covers −1.5)/P(away covers
++1.5) specifically, which isn't the complementary event needed for the
+away-favored framing without re-deriving from the full margin distribution;
+excluding them and saying so is the honest choice over quietly comparing
+mismatched quantities.
+
+This is the first time this build has a real answer to the spec's central
+credibility question, even if a sample-sized and partly-humbling one:
+**no demonstrated edge on moneyline or run line vs. the close; genuine
+parity on totals.** No "beats Vegas" claim is or should be made from this.
+
 ### Isotonic calibration (tested, did not help)
 
 Fit on the first half of the 2024 season, applied to the second half: ECE
@@ -512,7 +562,7 @@ regression-tested in `tests/unit/test_schedule_dedup.py`).
 
 ```bash
 make setup                                   # venv + editable install
-make test                                    # full suite (24 tests)
+make test                                    # full suite (29 tests)
 make leakage-test                            # just the anti-leakage gate
 make features SEASON=2021                    # build one season's dataset (incl. lineups)
 make features SEASON=2022                    # (2021+2022 support hyperparameter tuning/warm-up)
@@ -523,6 +573,12 @@ python scripts/run_backtest.py 2024 --prior 2023 --feature-set both --out-suffix
 python scripts/evaluate_backtest.py 2024 --prior 2023 --feature-set both
 python scripts/run_ensemble.py               # build + evaluate the moneyline stacked ensemble
 python scripts/run_market_ensembles.py       # build + evaluate the totals/run-line ensembles
+
+# CLV (needs a paid The Odds API key — put ODDS_API_KEY=... in a .env file,
+# NEVER commit it; .env is already gitignored):
+source .env && export ODDS_API_KEY
+python scripts/pull_historical_odds.py 500   # pulls a real closing-line sample (costs API credits)
+python scripts/compute_clv.py                # compares our models to that real market data
 ```
 
 ## Acceptance criteria — honest status
@@ -541,8 +597,11 @@ python scripts/run_market_ensembles.py       # build + evaluate the totals/run-l
 - [x] Run line modeled as P(margin), not a variable spread — and, like
       moneyline, improved via a stacked ensemble (simulation + a direct
       logistic model), adopted after it improved Brier/log loss/ECE.
-- [ ] CLV vs. closing line — **not measured**, no free/licensed odds source
-      available in this build. Reported as unavailable, not fabricated.
+- [x] CLV vs. closing line — **measured, with real data**, on a systematic
+      498-game (~20.5%) sample of 2024 (paid odds API; full-season coverage
+      would need far more budget). Honest result: market beats the model on
+      moneyline/run-line, model ties the market on totals. See "CLV vs. the
+      real closing line" in Results.
 - [x] Beats baselines out-of-sample — **the standalone simulation model
       beats home-field-always/better-record/Elo-only and is statistically
       tied with pitcher-adjusted Elo; the stacked ensemble decisively beats
@@ -554,22 +613,33 @@ python scripts/run_market_ensembles.py       # build + evaluate the totals/run-l
 - [x] Predictions immutable (backtest predictions parquet is write-once);
       no fabricated data anywhere in the pipeline.
 - [x] Uncertainty and the ~57–60% realistic ceiling stated (this file, top).
-- [x] No "beats Vegas" claim anywhere — there is no Vegas comparison in
-      this build at all, by design.
+- [x] No "beats Vegas" claim anywhere — now that a real market comparison
+      exists (CLV, above), the result is reported exactly as it came out:
+      the market wins on 2 of 3 markets, the model ties on the third. No
+      claim of beating the market is made anywhere in this build.
 
 ## What's next (not done yet)
 
-See `docs/limitations.md` for the full list. Two more levers were tried
-this session and are worth knowing didn't move the needle further: a 4th
-ensemble component (gradient-boosted trees on the matchup features) and
-PA-weighted lineup averaging (kept for its own honesty merits, but nearly
-neutral on performance) — see "Two further experiments" above. In priority
-order for what's left: extending the stacked ensemble to run line and
-totals (currently moneyline-only — would need run/total-producing
-baselines to blend with, which none of Elo/pitcher-adjusted-Elo are),
-tuning across even more seasons (two validation seasons was enough to catch
-attempt 1's overfitting, but the spec's full nested time-series CV would
-use more), live confirmed-lineup ingestion for daily predictions (vs.
-backtest-only actual lineups), extending the backtest across more seasons,
-an odds data source for CLV, and improving the run-line dispersion model
-for one-run games.
+See `docs/limitations.md` for the full list of what's resolved vs. still
+open. As of this build, all of the following ARE done (not "next"):
+stacked ensembles for moneyline and run line, PA-weighted lineups, live
+confirmed-lineup ingestion, and real CLV measurement. What's genuinely
+still open, in rough priority order:
+
+- **Full-season (or multi-season) CLV coverage** — the current 498-game
+  sample (~20.5% of 2024) is real but budget-limited; full 2024 coverage
+  at 3-market resolution would cost ~85,000 odds-API credits, and a
+  multi-season CLV trend (2021-2023) would cost more still.
+- **A full live prediction pipeline** — `mlb.lineups.live` ingestion is
+  real and tested, but generating today's actual predictions additionally
+  needs current-season (2025/2026) projection data, not pulled here.
+- **Tuning across even more seasons** — 4 consecutive validation seasons
+  converged to a stable plateau, but the spec's full nested time-series CV
+  would use more still.
+- **Improving the run-line dispersion model** for one-run games (still
+  underestimated — see "Run line" in Results) and PA-weighting a batter's
+  expected plate appearances more precisely (currently a fixed per-slot
+  average, not adjusted for a specific lineup's actual construction).
+- **GitHub deployment** — pushing this repo and standing up a GitHub Pages
+  dashboard (today's slate, calibration curves, the CLV chart) per the
+  original spec's daily-workflow vision — not yet done.
