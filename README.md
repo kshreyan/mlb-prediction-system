@@ -562,7 +562,7 @@ regression-tested in `tests/unit/test_schedule_dedup.py`).
 
 ```bash
 make setup                                   # venv + editable install
-make test                                    # full suite (29 tests)
+make test                                    # full suite (31 tests)
 make leakage-test                            # just the anti-leakage gate
 make features SEASON=2021                    # build one season's dataset (incl. lineups)
 make features SEASON=2022                    # (2021+2022 support hyperparameter tuning/warm-up)
@@ -579,12 +579,18 @@ python scripts/run_market_ensembles.py       # build + evaluate the totals/run-l
 source .env && export ODDS_API_KEY
 python scripts/pull_historical_odds.py 500   # pulls a real closing-line sample (costs API credits)
 python scripts/compute_clv.py                # compares our models to that real market data
+
+# Live daily predictions (no API key needed — public MLB Stats API only):
+python scripts/predict_today.py              # today's real slate
+python scripts/predict_today.py 2026-09-20   # a specific future date's slate
 ```
 
 ## Acceptance criteria — honest status
 
-- [x] Full pipeline runs raw data → predictions (backtest form; live daily
-      slate deployment is not yet built — see limitations).
+- [x] Full pipeline runs raw data → predictions, both in backtest form and
+      as a genuine live daily pipeline (`scripts/predict_today.py`) that
+      predicts every game on today's real MLB slate. See "Live daily
+      predictions" below.
 - [x] Walk-forward backtest, zero leakage (20 leakage tests passing,
       including 2 real bugs caught and fixed during this build).
 - [~] Predictions driven by starter + bullpen + confirmed lineups —
@@ -623,25 +629,66 @@ python scripts/compute_clv.py                # compares our models to that real 
 - **Repo**: [github.com/kshreyan/mlb-prediction-system](https://github.com/kshreyan/mlb-prediction-system) (public). CI runs the full test suite (including the leakage gate) on every push.
 - **Results dashboard**: [kshreyan.github.io/mlb-prediction-system](https://kshreyan.github.io/mlb-prediction-system/) — a static GitHub Pages site (`docs/index.html`) reporting the real headline numbers, the moneyline model comparison, the calibration reliability diagram, the CLV-vs-market chart, and the four-attempt tuning progression, all built from this session's actual output (no live-slate predictions yet — see below).
 - **CLV sample expansion, running locally on a schedule**: `scripts/pull_historical_odds.py --daily-batch 15`, wired to a macOS `launchd` job (`scripts/run_daily_odds_pull.sh`, daily at 9am local) that pulls 15 more real closing-line games per day, in date order, until the season is fully covered or the API key's credit budget runs low (it stops itself with a safety margin — never spends a key to zero). **The API key runs locally, in `.env`, and never leaves this machine** — a cloud-based scheduled routine was considered and deliberately rejected, since cloud routines have no secret-injection mechanism and can't be deleted (only disabled), which would have left a live paid key permanently embedded in a routine config with no way to fully remove it.
+- **Live daily predictions, running locally on a schedule**: `scripts/predict_today.py`, wired to a second `launchd` job (`scripts/run_daily_predictions.sh`, daily at 9:15am local) that predicts every game on that day's real MLB slate and writes an immutable, timestamped parquet file per run under `data/processed/daily_predictions/`. Uses only the public MLB Stats API — no key/secret involved, so this job carries none of the CLV job's key-exposure considerations. See "Live daily predictions" below for how it works and its honest limitations (lineups, weather).
+
+## Live daily predictions
+
+`scripts/predict_today.py` (`src/mlb/daily/predict.py`) predicts every game
+on a real, current MLB slate — not a backtest. It reuses the exact same
+leak-tested as-of-date functions as the backtest (never new, untested
+logic) via one technique: for each entity (a pitcher, a batter, a team), it
+appends a single synthetic row dated *today* with every stat column zeroed,
+runs the unchanged `add_asof_*` function, and reads off that one row's
+output. Because those functions compute each row's projection strictly
+from *earlier* rows by construction (the same property `tests/leakage/`
+already verifies), a zero-valued row dated today cannot leak into any
+historical projection, and its own output is exactly "what the model would
+project for this entity as of right now."
+
+Every underlying model (the Poisson run-environment simulation, Elo,
+pitcher-adjusted-Elo, and the moneyline stacking ensemble) is refit as a
+**final production version** — trained on all available historical data
+through yesterday (2019, 2021–2026) rather than the walk-forward-windowed
+form used for backtesting/evaluation. The ensemble's blending weights come
+from `predictions_2024_ensemble_final.parquet`, the same honestly
+walk-forward-out-of-sample logits the backtest itself validated the
+ensemble on, rather than being re-derived in-sample here.
+
+Two honest, load-bearing limitations of the live pipeline:
+
+- **Weather is unavailable for any not-yet-played game.** The MLB Stats API
+  returns no forecast until close to game time — confirmed directly against
+  the live API (`weather: {}`). Live predictions use a neutral fallback
+  (`wind_effect=0`, `temp_f_filled=72`) and every row carries
+  `weather_available: False`, rather than guessing or fabricating a
+  forecast.
+- **Lineups are frequently not yet confirmed** when the daily job runs
+  (confirmed lineups typically post 1–3 hours before first pitch, after the
+  9:15am local run). Each side carries `home_lineup_confirmed` /
+  `away_lineup_confirmed`; when a lineup isn't posted yet, that team's most
+  recent *actual* lineup (real historical data, not a guess) is used as an
+  honest proxy. A later manual run of `scripts/predict_today.py` the same
+  day, after lineups post, produces a *separate*, more accurate immutable
+  prediction file rather than overwriting the morning one.
 
 ## What's next (not done yet)
 
 See `docs/limitations.md` for the full list of what's resolved vs. still
 open. As of this build, all of the following ARE done (not "next"):
 stacked ensembles for moneyline and run line, PA-weighted lineups, live
-confirmed-lineup ingestion, real CLV measurement, and deployment (GitHub +
-Pages + a locally-scheduled CLV-expansion job). What's genuinely still
-open, in rough priority order:
+confirmed-lineup ingestion, real CLV measurement, a genuine live daily
+prediction pipeline, and deployment (GitHub + Pages + two locally-scheduled
+jobs — CLV expansion and daily predictions). What's genuinely still open,
+in rough priority order:
 
 - **Full-season CLV coverage, growing daily** — the local scheduled job
   above adds ~15 real games/day; full 2024 coverage at 3-market resolution
   needs ~85,000 odds-API credits total, well beyond the current ~4,100
   remaining, so this will keep the sample growing but likely won't reach
   full-season coverage on the current budget alone.
-- **A full live prediction pipeline** — `mlb.lineups.live` ingestion is
-  real and tested, but generating today's actual predictions additionally
-  needs current-season (2025/2026) projection data, not pulled here. The
-  Pages dashboard currently reports the 2024 backtest, not a live slate.
+- **The Pages dashboard doesn't yet show live slate predictions** — it
+  currently reports the 2024 backtest only; wiring today's
+  `daily_predictions/*.parquet` output into the dashboard is unbuilt.
 - **Tuning across even more seasons** — 4 consecutive validation seasons
   converged to a stable plateau, but the spec's full nested time-series CV
   would use more still.

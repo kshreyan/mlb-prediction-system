@@ -32,14 +32,25 @@ What's still missing:
   distinction is verified deterministically, not just by eyeballing live
   output once.
 
-  **What's still missing to reach a full live prediction pipeline:**
-  generating an actual prediction for today's games additionally requires
-  as-of-date pitcher/bullpen/batter projections computed from the CURRENT
-  season's own data — which means pulling 2025 and 2026 Statcast/lineup/
-  weather data (this build's projections only cover 2019/2021-2024). That's
-  a separate, larger data-pull task, not attempted here; this session
-  delivered the ingestion capability itself, tested and demonstrated
-  working on real current games, not the end-to-end live pipeline.
+  **RESOLVED: the full live prediction pipeline is now built and running.**
+  `src/mlb/daily/predict.py` (entry point `scripts/predict_today.py`)
+  predicts every game on a real, current slate. It closed the two gaps
+  above: (1) 2025 full-season and 2026 season-to-date Statcast
+  pitcher/batter/lineup/weather data were pulled, and `game_features_*`
+  built for every season now used (2019, 2021-2026); (2) each as-of-date
+  projection for "right now" is computed by appending one synthetic,
+  zero-valued row dated today into the historical series for that entity
+  and running the *exact same* leak-tested `add_asof_*` function — no new,
+  separately-tested projection logic. Because those functions only ever
+  read strictly-prior rows (the same guarantee `tests/leakage/` already
+  verifies), this is leak-safe by construction, not by new testing.
+  Demonstrated end-to-end on 2026-09-14's real 10-game slate: predictions
+  for every scheduled game, with `weather_available: False` and
+  `*_lineup_confirmed: False` honestly flagged where the underlying data
+  genuinely wasn't available (see §2 below and the note under this list).
+  Scheduled locally via `launchd` (`scripts/run_daily_predictions.sh`,
+  9:15am daily) — needs no API key, so none of the CLV job's key-exposure
+  considerations apply.
 - **RESOLVED: batters are now PA-weighted, not averaged equally.**
   `compute_pa_weights_by_slot` computes real empirical plate-appearances
   per batting-order slot from prior seasons only (leadoff hitters average
@@ -77,13 +88,18 @@ weather is a totals signal, not a moneyline signal, as domain intuition
 would predict.
 
 Remaining gap: the Stats API only reports the weather AT GAME TIME (or at
-whatever point the API snapshot was taken), not a pre-game FORECAST. For a
-live prediction pipeline, you'd want a forecast API for games not yet
-played, falling back to the actual reading only for backtesting historical
-games (where it's the correct, knowable-after-first-pitch information for
-grading, though technically a pre-game forecast would sometimes differ from
-the eventual actual reading — a subtlety worth flagging for anyone building
-the live pipeline).
+whatever point the API snapshot was taken), not a pre-game FORECAST.
+Confirmed directly against the live API for not-yet-played games:
+`gameData.weather` comes back `{}` (empty) — no forecast is available at
+any lead time this build checked. **This is a real, structural gap, not
+something the live pipeline works around**: `src/mlb/daily/predict.py` uses
+a neutral fallback (`wind_effect=0`, `temp_f_filled=72`, i.e. treated like
+a dome game) for every live prediction and sets `weather_available: False`
+on every row, rather than fabricating or estimating a forecast. Concretely,
+this means live totals predictions lose the ~0.026 MAE improvement weather
+was shown to provide in backtesting (above) until a forecast API is
+integrated — a known, quantifiable accuracy cost, stated plainly rather
+than silently absorbed.
 
 ## 3. RESOLVED: CLV is now measured, with real closing-line data, on a real sample
 
