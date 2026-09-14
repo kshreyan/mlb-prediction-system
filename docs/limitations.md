@@ -150,8 +150,22 @@ number.
 Extending this to full-season coverage, or to 2021-2023 for a
 walk-forward CLV trend over time, is mechanical but would need
 substantially more odds-API budget (roughly 2,429 games/season x ~35
-credits = ~85,000 credits for one full season at 3-market resolution) —
-not attempted here.
+credits = ~85,000 credits for one full season at 3-market resolution) than
+the ~4,100 remaining after this pull.
+
+**UPDATE: a local scheduled job now grows this sample daily.**
+`scripts/run_daily_odds_pull.sh`, wired to a macOS `launchd` agent (daily,
+9am local), calls `scripts/pull_historical_odds.py --daily-batch 15` —
+walking the full 2024 season in date order, skipping games already
+pulled, adding ~15 new real closing-line games per run, and stopping
+itself with a safety margin before the key's credits run out (never spends
+a key to exactly zero). This was deliberately built as a LOCAL scheduled
+job rather than a cloud routine (the platform's cloud routines have no
+secret-injection mechanism and cannot be deleted, only disabled — pasting
+a live paid API key into a cloud routine's config would have left it
+permanently embedded with no way to fully remove it). The key lives only
+in this machine's `.env`, sourced fresh by the job each run, never
+committed, never leaving the machine.
 
 ## 4. Backtest coverage: 2019, 2021-2024 pulled (2024 evaluated), not the full 2015+ history
 

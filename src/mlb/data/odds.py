@@ -39,12 +39,22 @@ def _api_key() -> str:
     return key
 
 
+_last_remaining_credits: int | None = None
+
+
+def remaining_credits() -> int | None:
+    """Credits remaining as of the most recent call, per the API's own
+    `x-requests-remaining` response header — None until a call has been made."""
+    return _last_remaining_credits
+
+
 def fetch_historical_snapshot(timestamp: dt.datetime, markets: str = "h2h,spreads,totals", regions: str = "us") -> dict:
     """One real API call: the full odds board as it stood at `timestamp`
     (UTC), across the requested markets/regions. Costs credits — see the
     module docstring. Retries transient failures; raises on real errors
     (e.g. a deactivated or exhausted key) rather than silently degrading.
     """
+    global _last_remaining_credits
     params = {
         "apiKey": _api_key(),
         "regions": regions,
@@ -53,6 +63,8 @@ def fetch_historical_snapshot(timestamp: dt.datetime, markets: str = "h2h,spread
     }
     for attempt in range(3):
         resp = requests.get(f"{BASE_URL}/historical/sports/{SPORT_KEY}/odds", params=params, timeout=30)
+        if "x-requests-remaining" in resp.headers:
+            _last_remaining_credits = int(resp.headers["x-requests-remaining"])
         if resp.status_code == 200:
             return resp.json()
         if resp.status_code in (401, 402, 403):

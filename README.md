@@ -618,21 +618,30 @@ python scripts/compute_clv.py                # compares our models to that real 
       the market wins on 2 of 3 markets, the model ties on the third. No
       claim of beating the market is made anywhere in this build.
 
+## Deployment
+
+- **Repo**: [github.com/kshreyan/mlb-prediction-system](https://github.com/kshreyan/mlb-prediction-system) (public). CI runs the full test suite (including the leakage gate) on every push.
+- **Results dashboard**: [kshreyan.github.io/mlb-prediction-system](https://kshreyan.github.io/mlb-prediction-system/) — a static GitHub Pages site (`docs/index.html`) reporting the real headline numbers, the moneyline model comparison, the calibration reliability diagram, the CLV-vs-market chart, and the four-attempt tuning progression, all built from this session's actual output (no live-slate predictions yet — see below).
+- **CLV sample expansion, running locally on a schedule**: `scripts/pull_historical_odds.py --daily-batch 15`, wired to a macOS `launchd` job (`scripts/run_daily_odds_pull.sh`, daily at 9am local) that pulls 15 more real closing-line games per day, in date order, until the season is fully covered or the API key's credit budget runs low (it stops itself with a safety margin — never spends a key to zero). **The API key runs locally, in `.env`, and never leaves this machine** — a cloud-based scheduled routine was considered and deliberately rejected, since cloud routines have no secret-injection mechanism and can't be deleted (only disabled), which would have left a live paid key permanently embedded in a routine config with no way to fully remove it.
+
 ## What's next (not done yet)
 
 See `docs/limitations.md` for the full list of what's resolved vs. still
 open. As of this build, all of the following ARE done (not "next"):
 stacked ensembles for moneyline and run line, PA-weighted lineups, live
-confirmed-lineup ingestion, and real CLV measurement. What's genuinely
-still open, in rough priority order:
+confirmed-lineup ingestion, real CLV measurement, and deployment (GitHub +
+Pages + a locally-scheduled CLV-expansion job). What's genuinely still
+open, in rough priority order:
 
-- **Full-season (or multi-season) CLV coverage** — the current 498-game
-  sample (~20.5% of 2024) is real but budget-limited; full 2024 coverage
-  at 3-market resolution would cost ~85,000 odds-API credits, and a
-  multi-season CLV trend (2021-2023) would cost more still.
+- **Full-season CLV coverage, growing daily** — the local scheduled job
+  above adds ~15 real games/day; full 2024 coverage at 3-market resolution
+  needs ~85,000 odds-API credits total, well beyond the current ~4,100
+  remaining, so this will keep the sample growing but likely won't reach
+  full-season coverage on the current budget alone.
 - **A full live prediction pipeline** — `mlb.lineups.live` ingestion is
   real and tested, but generating today's actual predictions additionally
-  needs current-season (2025/2026) projection data, not pulled here.
+  needs current-season (2025/2026) projection data, not pulled here. The
+  Pages dashboard currently reports the 2024 backtest, not a live slate.
 - **Tuning across even more seasons** — 4 consecutive validation seasons
   converged to a stable plateau, but the spec's full nested time-series CV
   would use more still.
@@ -640,6 +649,3 @@ still open, in rough priority order:
   underestimated — see "Run line" in Results) and PA-weighting a batter's
   expected plate appearances more precisely (currently a fixed per-slot
   average, not adjusted for a specific lineup's actual construction).
-- **GitHub deployment** — pushing this repo and standing up a GitHub Pages
-  dashboard (today's slate, calibration curves, the CLV chart) per the
-  original spec's daily-workflow vision — not yet done.
