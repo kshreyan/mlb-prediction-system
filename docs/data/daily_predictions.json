@@ -1,0 +1,126 @@
+{
+  "date": "2026-09-14",
+  "generated_at": "2026-09-14T18:08:45.188740+00:00",
+  "games": [
+    {
+      "away_team": "Los Angeles Dodgers",
+      "home_team": "Cincinnati Reds",
+      "away_probable_pitcher": "Tarik Skubal",
+      "home_probable_pitcher": "Nick Lodolo",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.3844,
+      "pred_mean_total": 8.62,
+      "sim_home_minus_1_5_cover_prob": 0.2582
+    },
+    {
+      "away_team": "Chicago White Sox",
+      "home_team": "Cleveland Guardians",
+      "away_probable_pitcher": "Sean Newcomb",
+      "home_probable_pitcher": "Gavin Williams",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.5366,
+      "pred_mean_total": 8.07,
+      "sim_home_minus_1_5_cover_prob": 0.3454
+    },
+    {
+      "away_team": "Detroit Tigers",
+      "home_team": "Toronto Blue Jays",
+      "away_probable_pitcher": "Troy Melton",
+      "home_probable_pitcher": "Jos\u00e9 Soriano",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.5202,
+      "pred_mean_total": 8.49,
+      "sim_home_minus_1_5_cover_prob": 0.3085
+    },
+    {
+      "away_team": "Baltimore Orioles",
+      "home_team": "New York Mets",
+      "away_probable_pitcher": "Brandon Young",
+      "home_probable_pitcher": "Jonah Tong",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.5621,
+      "pred_mean_total": 8.52,
+      "sim_home_minus_1_5_cover_prob": 0.3611
+    },
+    {
+      "away_team": "Atlanta Braves",
+      "home_team": "Chicago Cubs",
+      "away_probable_pitcher": "Reynaldo L\u00f3pez",
+      "home_probable_pitcher": "David Peterson",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.5454,
+      "pred_mean_total": 8.78,
+      "sim_home_minus_1_5_cover_prob": 0.3819
+    },
+    {
+      "away_team": "New York Yankees",
+      "home_team": "Minnesota Twins",
+      "away_probable_pitcher": "Will Warren",
+      "home_probable_pitcher": "Dean Kremer",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.4463,
+      "pred_mean_total": 9.09,
+      "sim_home_minus_1_5_cover_prob": 0.3446
+    },
+    {
+      "away_team": "San Francisco Giants",
+      "home_team": "St. Louis Cardinals",
+      "away_probable_pitcher": "Landen Roupp",
+      "home_probable_pitcher": "Quinn Mathews",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.5491,
+      "pred_mean_total": 8.07,
+      "sim_home_minus_1_5_cover_prob": 0.3476
+    },
+    {
+      "away_team": "San Diego Padres",
+      "home_team": "Colorado Rockies",
+      "away_probable_pitcher": "Casey Mize",
+      "home_probable_pitcher": "Tomoyuki Sugano",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.293,
+      "pred_mean_total": 9.93,
+      "sim_home_minus_1_5_cover_prob": 0.2506
+    },
+    {
+      "away_team": "Seattle Mariners",
+      "home_team": "Los Angeles Angels",
+      "away_probable_pitcher": "Kade Anderson",
+      "home_probable_pitcher": "Reid Detmers",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.5215,
+      "pred_mean_total": 7.96,
+      "sim_home_minus_1_5_cover_prob": 0.3689
+    },
+    {
+      "away_team": "Miami Marlins",
+      "home_team": "Arizona Diamondbacks",
+      "away_probable_pitcher": "Sandy Alcantara",
+      "home_probable_pitcher": "Corbin Burnes",
+      "home_lineup_confirmed": false,
+      "away_lineup_confirmed": false,
+      "weather_available": false,
+      "ensemble_home_win_prob": 0.5408,
+      "pred_mean_total": 8.61,
+      "sim_home_minus_1_5_cover_prob": 0.3424
+    }
+  ]
+}
