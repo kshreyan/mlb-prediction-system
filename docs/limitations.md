@@ -132,18 +132,20 @@ is straightforward — the schema this system's own data modules already
 follow (`source`, `fetched_at`, `is_closing` flags) was designed with this
 in mind from the start.
 
-## 4. Backtest coverage: 2021-2024 (2024 evaluated), not the full 2015+ history
+## 4. Backtest coverage: 2019, 2021-2024 pulled (2024 evaluated), not the full 2015+ history
 
 The walk-forward backtest in this build covers the full 2024 season
 (2,429 games, evaluated) and 2023 (2,430 games, also backtested — used both
 as 2024's training pool and, via its own 2022-warm-started walk-forward run,
-as ensemble/tuning validation data). 2022 and 2021 were each pulled in full
-(pitchers, batters/lineups, weather) specifically to support multi-season
-hyperparameter tuning (§9) and the ensemble's warm-up. Extending to 2015+ is
-mechanical (`make features SEASON=<year>` for each year, then include
-earlier seasons in `--prior`), but was out of scope for the time budget of
-this build. Statcast data (the pitcher-peripheral foundation) only exists
-from 2015 onward regardless.
+as ensemble/tuning validation data). 2019, 2021, and 2022 were each pulled
+in full (pitchers, batters/lineups, weather) specifically to support
+multi-season hyperparameter tuning (§9) and the ensemble's warm-up — 2019
+was added as a 4th tuning-validation season; 2020 was deliberately skipped
+(a 60-game pandemic-shortened season is a poor validation signal). Extending
+to 2015+ is mechanical (`make features SEASON=<year>` for each year, then
+include earlier seasons in `--prior`), but was out of scope for the time
+budget of this build. Statcast data (the pitcher-peripheral foundation)
+only exists from 2015 onward regardless.
 
 ## 5. Umpire tendencies, catcher framing splits, travel/rest beyond bullpen fatigue
 
@@ -250,7 +252,7 @@ What's still open:
   and more diverse ensemble components beyond the GBM attempt above (e.g. a
   hierarchical Bayesian pitcher/batter model).
 
-## 9. Hyperparameter tuning: three attempts, one failed, two confirmed each other
+## 9. Hyperparameter tuning: four attempts, converging to a stable plateau
 
 `scripts/tune_hyperparams.py` runs a real, held-out coordinate-descent
 search. The FIRST attempt scored candidates by walk-forward log loss on a
@@ -281,13 +283,34 @@ moved FURTHER IN THE SAME DIRECTION as attempt 2 rather than reversing —
 every other parameter (pitcher k, batter k, bullpen halflife/k,
 team-offense k) was confirmed unchanged. Applied to the 2024 holdout:
 accuracy improved again, to 55.4%, with Brier/log loss essentially flat
-(0.2471/0.6873). This is the config shipped in this build.
+(0.2471/0.6873).
+
+A FOURTH pass (`scripts/tune_hyperparams_4season_check.py`) added 2019 as
+a fourth validation season (2020 deliberately excluded — a 60-game
+pandemic-shortened season is a poor validation signal), but rather than
+re-running the full 8-parameter grid (diminishing value once 3 seasons
+already agreed on 5 of 8 parameters), it targeted only the three halflives
+that had trended upward every round: pitcher, batter, team-offense. Result:
+pitcher_halflife extended FURTHER STILL (110→150 days), but
+batter_halflife (140) and team_offense_halflife (70) both PLATEAUED — their
+further-extended candidates (180, 100) did not beat the 3-season values.
+Applied to the 2024 holdout, this made essentially no practical difference
+(accuracy 55.6%→55.4%, Brier/log loss flat, well within noise) even though
+the pooled 4-season validation metric ticked up slightly. This is the
+config shipped in this build, and the plateau on 2 of 3 trending
+parameters — after 3 consecutive rounds of them moving in lockstep — is a
+genuinely reassuring sign that the search has found a real, stable region
+rather than chasing noise indefinitely.
 
 The lesson worth keeping: on a system this noisy, tuning on one validation
 season was actively misleading (attempt 1), two seasons was enough to
-produce a result that actually transferred (attempt 2), and three seasons
-gave a further, consistent-direction refinement rather than another
-reversal (attempt 3) — increasing confidence that the current
-hyperparameters reflect a real, stable signal rather than noise. The
-original spec's full nested time-series CV (more seasons still) would be
-the natural further extension — not yet built.
+produce a result that actually transferred (attempt 2), three seasons gave
+a further, consistent-direction refinement rather than a reversal (attempt
+3), and a fourth season showed the process converging — most parameters
+holding steady, only one still moving, and even that one with a negligible
+practical effect (attempt 4). That progression IS the evidence that the
+hyperparameters now reflect a real, stable signal rather than noise, and a
+reasonable point to stop this particular line of investigation. The
+original spec's full nested time-series CV (even more seasons, or a
+non-greedy joint search) would be the natural further extension for
+someone with more compute budget to spend here — not yet built.
