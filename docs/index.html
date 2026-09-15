@@ -159,7 +159,7 @@
 </header>
 
 <div class="honesty-banner">
-  <strong>The honesty standard.</strong> MLB is the least predictable major sport. This system targets calibration and honest performance vs. realistic baselines, not raw accuracy — ~57–60% moneyline is a <em>great</em> result here, not a floor, and anything above ~62% is presumed leakage. Run line and totals near market breakeven is success, not failure. Every number below is from a real walk-forward backtest on the 2024 season (2,429 games), evaluated after 29 automated leakage tests confirmed no future information reaches any prediction.
+  <strong>The honesty standard.</strong> MLB is the least predictable major sport. This system targets calibration and honest performance vs. realistic baselines, not raw accuracy — ~57–60% moneyline is a <em>great</em> result here, not a floor, and anything above ~62% is presumed leakage. Run line and totals near market breakeven is success, not failure. Every number below is from a real walk-forward backtest on the 2024 season (2,429 games), evaluated after 20 automated leakage tests confirmed no future information reaches any prediction, and confirmed to hold up on an untouched 2025 out-of-sample season never used in any tuning decision (full writeup: <a href="limitations.md">docs/limitations.md</a> §11).
 </div>
 
 <section id="live-slate">
@@ -205,7 +205,7 @@
     <div class="stat-tile"><div class="label">Ensemble Brier</div><div class="value">0.2447</div><div class="sub">best of every model tested</div></div>
     <div class="stat-tile"><div class="label">Ensemble ECE</div><div class="value">0.0095</div><div class="sub">calibration error</div></div>
     <div class="stat-tile"><div class="label">CLV sample</div><div class="value">498</div><div class="sub">real closing-line games (~20.5% of 2024)</div></div>
-    <div class="stat-tile"><div class="label">Leakage tests</div><div class="value">29 / 29</div><div class="sub">all passing, CI-enforced</div></div>
+    <div class="stat-tile"><div class="label">Test suite</div><div class="value">31 / 31</div><div class="sub">20 leakage + 11 unit, all passing, CI-enforced</div></div>
   </div>
 </section>
 

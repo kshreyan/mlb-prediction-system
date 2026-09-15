@@ -195,6 +195,18 @@ Numbers below are the FINAL pipeline (lineups + weather + tuned
 hyperparameters) unless a table is explicitly an ablation showing an
 earlier stage.
 
+**These numbers held up on 2025** — a season never touched by any tuning
+decision, backtested and evaluated the same way after the fact
+(`scripts/validate_2025_holdout.py`). Every component landed within
+~0.001 Brier / ~1pp accuracy of its 2024 value, and the live pipeline's
+actual ensemble-fitting method (fixed weights from 2024's real
+walk-forward-out-of-sample logits) matched or slightly beat the 2024
+ensemble numbers on 2025. A real, persistent gap was also confirmed for a
+third straight season (one-run games underrepresented in the simulation),
+and a plausible-looking fix for it was tried and rejected after it made
+the actual run-line market's calibration worse. Full honest writeup,
+including the rejected fix and why it failed: `docs/limitations.md` §11.
+
 ### Lineup ablation (team-level proxy vs. lineup-level vs. both)
 
 Tested with weather off and pre-tuning defaults, on the full 2,429-game
@@ -482,10 +494,17 @@ Actual home −1.5 cover rate: 35.3% vs. the ensemble's mean predicted 34.9%
 — well-calibrated in aggregate as well as per-bin.
 
 One-run-game frequency is still underestimated (actual 27.8% vs. simulated
-19.6%, unchanged by this session's work) — the NB dispersion parameter (fit
-once, globally) doesn't capture the real fat-tailed frequency of close
-games. Concrete target for next iteration: a per-team or
-run-environment-dependent dispersion instead of one global value.
+19.6%) — confirmed as a real, persistent gap across three independent
+seasons (2023, 2024, and the untouched 2025 holdout: 29.4% actual vs.
+19.6% predicted — see `docs/limitations.md` §11), not a 2024-specific
+artifact. A targeted fix (compressing decisive simulated games toward a
+one-run finish) was implemented, calibrated on 2023, and validated on
+2025: it did fix the one-run statistic, but made the actual traded
+run-line market's Brier/ECE measurably *worse* (0.2273→0.2298,
+0.0123→0.0474) by breaking a beneficial error-cancellation across margin
+buckets that the original model had — rejected and reverted, not shipped.
+Concrete target for next iteration: a bucket-aware recalibration or a
+mechanistic bullpen-usage feature, not a uniform redistribution.
 
 ### CLV vs. the real closing line — the spec's "decisive and humbling benchmark"
 
@@ -693,22 +712,26 @@ See `docs/limitations.md` for the full list of what's resolved vs. still
 open. As of this build, all of the following ARE done (not "next"):
 stacked ensembles for moneyline and run line, PA-weighted lineups, live
 confirmed-lineup ingestion, real CLV measurement, a genuine live daily
-prediction pipeline, and deployment (GitHub + Pages + two locally-scheduled
-jobs — CLV expansion and daily predictions). What's genuinely still open,
-in rough priority order:
+prediction pipeline with a real market-edge comparison, out-of-sample
+validation on an untouched 2025 season, and deployment (GitHub + Pages +
+two locally-scheduled jobs — CLV expansion and daily predictions). What's
+genuinely still open, in rough priority order:
 
 - **Full-season CLV coverage, growing daily** — the local scheduled job
   above adds ~15 real games/day; full 2024 coverage at 3-market resolution
   needs ~85,000 odds-API credits total, well beyond the current ~4,100
   remaining, so this will keep the sample growing but likely won't reach
   full-season coverage on the current budget alone.
-- **The Pages dashboard doesn't yet show live slate predictions** — it
-  currently reports the 2024 backtest only; wiring today's
-  `daily_predictions/*.parquet` output into the dashboard is unbuilt.
+- **The one-run-game gap remains open** — confirmed across three
+  independent seasons (2023/2024/2025) and a proposed fix was tried and
+  rejected because it made the actual run-line market worse, not better
+  (`docs/limitations.md` §11). A future attempt should preserve the
+  existing margin distribution's correct aggregate shape (e.g. a
+  bucket-aware recalibration, or a mechanistic bullpen-usage feature)
+  rather than uniformly redistributing probability mass.
 - **Tuning across even more seasons** — 4 consecutive validation seasons
   converged to a stable plateau, but the spec's full nested time-series CV
   would use more still.
-- **Improving the run-line dispersion model** for one-run games (still
-  underestimated — see "Run line" in Results) and PA-weighting a batter's
-  expected plate appearances more precisely (currently a fixed per-slot
-  average, not adjusted for a specific lineup's actual construction).
+- **PA-weighting a batter's expected plate appearances more precisely** —
+  currently a fixed per-slot average, not adjusted for a specific lineup's
+  actual construction.

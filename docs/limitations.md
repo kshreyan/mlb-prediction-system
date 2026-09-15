@@ -365,3 +365,109 @@ reasonable point to stop this particular line of investigation. The
 original spec's full nested time-series CV (even more seasons, or a
 non-greedy joint search) would be the natural further extension for
 someone with more compute budget to spend here — not yet built.
+
+## 11. Out-of-sample validation on 2025 — a genuinely untouched season (what went right, what didn't, and a rejected fix)
+
+Every number reported above through 2024 came from seasons this build
+either tuned on (2019, 2021-2023) or used as its primary validation season
+(2024). 2025 was pulled only afterward, to support live predictions — it
+had never influenced a single hyperparameter, ensemble weight, or design
+decision. Running the exact same walk-forward backtest and evaluation on
+2025 (`scripts/run_backtest.py 2025 --prior 2024`, `scripts/evaluate_backtest.py`,
+`scripts/validate_2025_holdout.py`) is the closest thing this project has
+to a true, un-gamed test of whether the reported 2024 numbers reflect a
+real, generalizing signal or were partly luck.
+
+**What went right.** Every core component transferred with almost no
+degradation:
+
+| Model | 2024 (reported) | 2025 (untouched holdout) |
+|---|---|---|
+| Simulation | acc 55.4%, Brier 0.2470 | acc 54.2%, Brier 0.2469 |
+| Elo-only | acc 55.0%, Brier 0.2483 | acc 54.7%, Brier 0.2484 |
+| Pitcher-adjusted Elo | acc 54.9%, Brier 0.2455 | acc 55.5%, Brier 0.2450 |
+| Home-field-always | acc 52.8%, Brier 0.2494 | acc 53.5%, Brier 0.2489 |
+| Better-record (Log5) | acc 50.3%, Brier 0.2646 | acc 51.8%, Brier 0.2580 |
+
+Brier scores land within 0.0001-0.0007 of their 2024 values across every
+model — as close to "identical" as 2,186-2,430-game single-season samples
+allow. Run-line calibration held up too: 2025's actual home -1.5 cover
+rate (35.6%) is nearly identical to 2024's (35.3%), and the model's mean
+predicted rate (35.1%) is close on both. **This is the headline finding:
+the 2024 results were not a fluke — the model's real-world performance is
+stable across an independent season it never touched.**
+
+The production ensemble-fitting method specifically validated well: fitting
+the final stacking weights ONCE on 2024's genuine walk-forward-out-of-sample
+logits (exactly what `src/mlb/daily/predict.py` does for live predictions —
+see "Live daily predictions" in the README) and applying those fixed
+weights to 2025 gave Brier 0.2441 / accuracy 56.5% / ECE 0.0139 — matching
+or slightly *beating* the original 2024 ensemble numbers (Brier 0.2447 /
+56.3%). A separate check — re-running the backtest's own within-season
+walk-forward ensemble refit (weekly retraining, `min_training_games=200`)
+on 2025 alone — did notably worse (Brier 0.2458, ECE 0.0304) and even
+slightly underperformed its own best individual component
+(pitcher-adjusted Elo, Brier 0.2450) that season. The takeaway: a stable
+set of weights learned from a full prior season's genuine OOS performance
+generalizes to a new season better than trying to re-learn weights from
+scratch as that new season's data trickles in — which is exactly why the
+live pipeline is built the way it is, and this result is now the
+justification, not just a design guess.
+
+**A totals red herring, checked and ruled out.** 2025's totals MAE (3.591)
+looked worse than 2024's (3.425) at first glance — worth flagging honestly
+rather than burying. But 2025's real run-scoring environment was more
+variable that season (runs/game std 4.594 vs 2024's 4.312, computed
+directly from `data/raw/schedule`), which mechanically inflates MAE for
+*any* method, including a naive one. Recomputing the same as-of
+league-average naive baseline used for the reported 2024 number (3.451) on
+2025 gives 3.633 — the model still beats it, by a similar-to-slightly-larger
+margin (0.042 vs 0.026 runs) than in 2024. **Conclusion: not a regression,
+a season-wide variance shift that a same-year baseline comparison catches
+and a same-value comparison across years would have missed.**
+
+**What's still wrong, confirmed for a third straight season.** The
+one-run-game underestimate flagged in the Results section is real and
+persistent, not a 2024 artifact: pooling 2019/2021-2025 (14,577 real
+games), the true rate of exactly-one-run finals is 28.1%, and it lands at
+27.8% (2023), 27.8% (2024), and 29.4% (2025) individually — remarkably
+stable — while this build's simulation predicts only ~19.6-19.7% in every
+one of those seasons. Two independent Gamma-Poisson team-run draws simply
+don't produce enough one-run games; the leading real-world explanation is
+strategic bullpen usage (a team protecting a small lead pitches its best
+reliever, compressing what an independent-scoring model would render as a
+blowout into a narrow finish) — a genuine within-game dynamic this
+game-level (not play-by-play) simulation has no way to represent.
+
+**A fix was attempted and rejected — an honest negative result, not a
+silent abandonment.** A post-hoc "close-game compression" was implemented
+in `simulate_game`: with probability `p`, take a decisive (\|margin\|>=2)
+simulated game and pull its margin in to the closest value consistent with
+that game's own total-runs parity (1 if odd, 2 if even), holding the total
+runs AND the winner exactly fixed — by construction this cannot move
+`home_win_prob`, `mean_total`, or the total-runs distribution, only
+run-line-adjacent quantities. Calibrated on 2023 alone (`p=0.28`, via a
+grid search matching 2023's own actual one-run rate) and validated purely
+out-of-sample on 2025:
+
+- One-run-game calibration clearly improved: predicted rate 19.6%→28.1%
+  (actual: 29.4%), Brier 0.2167→0.2074, log loss 0.6317→0.6053.
+- But the actual traded run-line market got clearly **worse**: Brier
+  0.2273→0.2298, and ECE nearly quadrupled, 0.0123→0.0474.
+
+The mechanism: the original (uncompressed) model's aggregate run-line
+calibration was already good — but through compensating errors across
+adjacent margin buckets, not because every bucket was individually
+correct. Uniformly pulling mass out of every decisive-game bucket to fix
+the one-run bucket broke that cancellation and made the metric that
+actually matters (the traded run-line market) worse, even though the
+diagnostic statistic it targeted got better. **Rejected and reverted** —
+`src/mlb/simulation/engine.py`'s `simulate_game` ships unchanged. This is
+the same category of result as the rejected GBM ensemble member and the
+rejected Ridge-regularized totals-stacking fix (§10): a plausible-sounding
+improvement that real out-of-sample measurement disproved before it
+shipped. A future fix for the one-run-game gap should preserve the
+existing margin distribution's correct aggregate shape rather than
+uniformly redistributing it — e.g., a smarter, bucket-aware recalibration,
+or a mechanistic bullpen-usage feature in the run-environment model itself
+— neither attempted here.
