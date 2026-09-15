@@ -627,9 +627,9 @@ python scripts/predict_today.py 2026-09-20   # a specific future date's slate
 ## Deployment
 
 - **Repo**: [github.com/kshreyan/mlb-prediction-system](https://github.com/kshreyan/mlb-prediction-system) (public). CI runs the full test suite (including the leakage gate) on every push.
-- **Results dashboard**: [kshreyan.github.io/mlb-prediction-system](https://kshreyan.github.io/mlb-prediction-system/) — a static GitHub Pages site (`docs/index.html`) reporting the real headline numbers, the moneyline model comparison, the calibration reliability diagram, the CLV-vs-market chart, and the four-attempt tuning progression, all built from this session's actual output. Its top section, "Today's Live Slate", shows real same-day predictions for every game on the current MLB schedule, reading `docs/data/daily_predictions.json` — refreshed and auto-published (see below) every morning.
+- **Results dashboard**: [kshreyan.github.io/mlb-prediction-system](https://kshreyan.github.io/mlb-prediction-system/) — a static GitHub Pages site (`docs/index.html`) reporting the real headline numbers, the moneyline model comparison, the calibration reliability diagram, the CLV-vs-market chart, and the four-attempt tuning progression, all built from this session's actual output. Its top two sections, "Today's Live Slate" and "Best Model-vs-Market Edges", show real same-day moneyline/run-line/total predictions for every game on the current MLB schedule alongside the real live market's own de-vigged probability, reading `docs/data/daily_predictions.json` — refreshed and auto-published (see below) every morning.
 - **CLV sample expansion, running locally on a schedule**: `scripts/pull_historical_odds.py --daily-batch 15`, wired to a macOS `launchd` job (`scripts/run_daily_odds_pull.sh`, daily at 9am local) that pulls 15 more real closing-line games per day, in date order, until the season is fully covered or the API key's credit budget runs low (it stops itself with a safety margin — never spends a key to zero). **The API key runs locally, in `.env`, and never leaves this machine** — a cloud-based scheduled routine was considered and deliberately rejected, since cloud routines have no secret-injection mechanism and can't be deleted (only disabled), which would have left a live paid key permanently embedded in a routine config with no way to fully remove it.
-- **Live daily predictions, running locally on a schedule**: `scripts/predict_today.py`, wired to a second `launchd` job (`scripts/run_daily_predictions.sh`, daily at 9:15am local) that predicts every game on that day's real MLB slate, writes an immutable, timestamped parquet file per run under `data/processed/daily_predictions/`, and refreshes `docs/data/daily_predictions.json` — the one file the job then `git add`s, commits, and pushes (nothing else; never a broad `git add`), so the "Today's Live Slate" section of the Pages dashboard updates itself every morning with no manual step. Uses only the public MLB Stats API — no key/secret involved, so this job carries none of the CLV job's key-exposure considerations. See "Live daily predictions" below for how it works and its honest limitations (lineups, weather).
+- **Live daily predictions, running locally on a schedule**: `scripts/predict_today.py`, wired to a second `launchd` job (`scripts/run_daily_predictions.sh`, daily at 9:15am local) that predicts every game on that day's real MLB slate, writes an immutable, timestamped parquet file per run under `data/processed/daily_predictions/`, and refreshes `docs/data/daily_predictions.json` — the one file the job then `git add`s, commits, and pushes (nothing else; never a broad `git add`), so the dashboard updates itself every morning with no manual step. Uses the public MLB Stats API for the predictions themselves, plus one call/day to the same paid Odds API (a different, much cheaper "current odds" endpoint, not the historical-snapshot one the CLV job uses) for a real market comparison — see "Live daily predictions" below.
 
 ## Live daily predictions
 
@@ -653,6 +653,22 @@ form used for backtesting/evaluation. The ensemble's blending weights come
 from `predictions_2024_ensemble_final.parquet`, the same honestly
 walk-forward-out-of-sample logits the backtest itself validated the
 ensemble on, rather than being re-derived in-sample here.
+
+**Market comparison and "edges"**: the live pipeline also pulls the real,
+current live odds board (`mlb.data.odds.fetch_live_odds` — the cheap
+"current odds" endpoint, not the 10x-costlier historical-snapshot one the
+CLV job uses) and computes, for moneyline, run line, and totals, this
+model's probability alongside the market's real de-vigged consensus
+probability across every US bookmaker reported. The dashboard's "Best
+Model-vs-Market Edges" table ranks the games/markets where the two diverge
+most. This is a **divergence ranking, not a claim of positive expected
+value** — restated plainly on the dashboard itself: this project's own CLV
+result (above) found the real market beats this model on moneyline and run
+line, and ties it on totals, so a larger disagreement with a historically
+sharper market is not evidence the model, rather than the market, is
+right. A missing market line (a book hasn't posted yet, or the API call
+fails) leaves that game/market absent from the comparison rather than
+fabricating one.
 
 Two honest, load-bearing limitations of the live pipeline:
 

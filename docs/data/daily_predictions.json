@@ -1,6 +1,6 @@
 {
   "date": "2026-09-14",
-  "generated_at": "2026-09-14T18:13:35.623053+00:00",
+  "generated_at": "2026-09-14T18:30:26.552913+00:00",
   "games": [
     {
       "away_team": "Los Angeles Dodgers",
@@ -10,9 +10,23 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.3844,
-      "pred_mean_total": 8.62,
-      "sim_home_minus_1_5_cover_prob": 0.2582
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.3844,
+        "market_home_prob": 0.3412,
+        "market_away_prob": 0.6588
+      },
+      "run_line": {
+        "market_point": 1.5,
+        "model_home_prob": 0.5578,
+        "market_home_prob": 0.4661
+      },
+      "total": {
+        "model_mean": 8.62,
+        "market_point": 7.5,
+        "model_over_prob": 0.5571,
+        "market_over_prob": 0.5
+      }
     },
     {
       "away_team": "Chicago White Sox",
@@ -22,9 +36,23 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.5366,
-      "pred_mean_total": 8.07,
-      "sim_home_minus_1_5_cover_prob": 0.3454
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.5366,
+        "market_home_prob": 0.5823,
+        "market_away_prob": 0.4177
+      },
+      "run_line": {
+        "market_point": -1.5,
+        "model_home_prob": 0.3454,
+        "market_home_prob": 0.3877
+      },
+      "total": {
+        "model_mean": 8.07,
+        "market_point": 7.0,
+        "model_over_prob": 0.5047,
+        "market_over_prob": 0.4868
+      }
     },
     {
       "away_team": "Detroit Tigers",
@@ -34,9 +62,23 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.5202,
-      "pred_mean_total": 8.49,
-      "sim_home_minus_1_5_cover_prob": 0.3085
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.5202,
+        "market_home_prob": 0.5578,
+        "market_away_prob": 0.4422
+      },
+      "run_line": {
+        "market_point": -1.5,
+        "model_home_prob": 0.3085,
+        "market_home_prob": 0.3747
+      },
+      "total": {
+        "model_mean": 8.49,
+        "market_point": 7.5,
+        "model_over_prob": 0.5425,
+        "market_over_prob": 0.5
+      }
     },
     {
       "away_team": "Baltimore Orioles",
@@ -46,9 +88,23 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.5621,
-      "pred_mean_total": 8.52,
-      "sim_home_minus_1_5_cover_prob": 0.3611
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.5621,
+        "market_home_prob": 0.5311,
+        "market_away_prob": 0.4689
+      },
+      "run_line": {
+        "market_point": -1.5,
+        "model_home_prob": 0.3611,
+        "market_home_prob": 0.3565
+      },
+      "total": {
+        "model_mean": 8.52,
+        "market_point": 8.0,
+        "model_over_prob": 0.45,
+        "market_over_prob": 0.4895
+      }
     },
     {
       "away_team": "Atlanta Braves",
@@ -58,9 +114,23 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.5454,
-      "pred_mean_total": 8.78,
-      "sim_home_minus_1_5_cover_prob": 0.3819
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.5454,
+        "market_home_prob": 0.5538,
+        "market_away_prob": 0.4462
+      },
+      "run_line": {
+        "market_point": -1.5,
+        "model_home_prob": 0.3819,
+        "market_home_prob": 0.3933
+      },
+      "total": {
+        "model_mean": 8.78,
+        "market_point": 9.5,
+        "model_over_prob": 0.389,
+        "market_over_prob": 0.4961
+      }
     },
     {
       "away_team": "New York Yankees",
@@ -70,9 +140,23 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.4463,
-      "pred_mean_total": 9.09,
-      "sim_home_minus_1_5_cover_prob": 0.3446
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.4463,
+        "market_home_prob": 0.4663,
+        "market_away_prob": 0.5337
+      },
+      "run_line": {
+        "market_point": 1.5,
+        "model_home_prob": 0.6352,
+        "market_home_prob": 0.5856
+      },
+      "total": {
+        "model_mean": 9.09,
+        "market_point": 8.0,
+        "model_over_prob": 0.5037,
+        "market_over_prob": 0.5105
+      }
     },
     {
       "away_team": "San Francisco Giants",
@@ -82,9 +166,23 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.5491,
-      "pred_mean_total": 8.07,
-      "sim_home_minus_1_5_cover_prob": 0.3476
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.5491,
+        "market_home_prob": 0.5663,
+        "market_away_prob": 0.4337
+      },
+      "run_line": {
+        "market_point": -1.5,
+        "model_home_prob": 0.3476,
+        "market_home_prob": 0.3827
+      },
+      "total": {
+        "model_mean": 8.07,
+        "market_point": 8.0,
+        "model_over_prob": 0.4073,
+        "market_over_prob": 0.5
+      }
     },
     {
       "away_team": "San Diego Padres",
@@ -94,9 +192,23 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.293,
-      "pred_mean_total": 9.93,
-      "sim_home_minus_1_5_cover_prob": 0.2506
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.293,
+        "market_home_prob": 0.3556,
+        "market_away_prob": 0.6444
+      },
+      "run_line": {
+        "market_point": 1.5,
+        "model_home_prob": 0.5144,
+        "market_home_prob": 0.4508
+      },
+      "total": {
+        "model_mean": 9.93,
+        "market_point": 11.0,
+        "model_over_prob": 0.3296,
+        "market_over_prob": 0.5052
+      }
     },
     {
       "away_team": "Seattle Mariners",
@@ -106,9 +218,23 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.5215,
-      "pred_mean_total": 7.96,
-      "sim_home_minus_1_5_cover_prob": 0.3689
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.5215,
+        "market_home_prob": 0.4922,
+        "market_away_prob": 0.5078
+      },
+      "run_line": {
+        "market_point": 1.5,
+        "model_home_prob": 0.6949,
+        "market_home_prob": 0.6192
+      },
+      "total": {
+        "model_mean": 7.96,
+        "market_point": 7.5,
+        "model_over_prob": 0.495,
+        "market_over_prob": 0.4895
+      }
     },
     {
       "away_team": "Miami Marlins",
@@ -118,9 +244,97 @@
       "home_lineup_confirmed": false,
       "away_lineup_confirmed": false,
       "weather_available": false,
-      "ensemble_home_win_prob": 0.5408,
-      "pred_mean_total": 8.61,
-      "sim_home_minus_1_5_cover_prob": 0.3424
+      "n_bookmakers": 11,
+      "moneyline": {
+        "model_home_prob": 0.5408,
+        "market_home_prob": 0.5464,
+        "market_away_prob": 0.4536
+      },
+      "run_line": {
+        "market_point": -1.5,
+        "model_home_prob": 0.3424,
+        "market_home_prob": 0.3705
+      },
+      "total": {
+        "model_mean": 8.61,
+        "market_point": 8.5,
+        "model_over_prob": 0.4613,
+        "market_over_prob": 0.4895
+      }
+    }
+  ],
+  "top_edges": [
+    {
+      "game": "San Diego Padres @ Colorado Rockies",
+      "market": "Total",
+      "pick": "Under 11",
+      "model_prob": 0.6704,
+      "market_prob": 0.4948,
+      "edge_pp": 0.1756,
+      "n_bookmakers": 11
+    },
+    {
+      "game": "Atlanta Braves @ Chicago Cubs",
+      "market": "Total",
+      "pick": "Under 9.5",
+      "model_prob": 0.611,
+      "market_prob": 0.5039,
+      "edge_pp": 0.1071,
+      "n_bookmakers": 11
+    },
+    {
+      "game": "San Francisco Giants @ St. Louis Cardinals",
+      "market": "Total",
+      "pick": "Under 8",
+      "model_prob": 0.5927,
+      "market_prob": 0.5,
+      "edge_pp": 0.0927,
+      "n_bookmakers": 11
+    },
+    {
+      "game": "Los Angeles Dodgers @ Cincinnati Reds",
+      "market": "Run line",
+      "pick": "Cincinnati Reds +1.5",
+      "model_prob": 0.5578,
+      "market_prob": 0.4661,
+      "edge_pp": 0.0917,
+      "n_bookmakers": 11
+    },
+    {
+      "game": "Seattle Mariners @ Los Angeles Angels",
+      "market": "Run line",
+      "pick": "Los Angeles Angels +1.5",
+      "model_prob": 0.6949,
+      "market_prob": 0.6192,
+      "edge_pp": 0.0757,
+      "n_bookmakers": 11
+    },
+    {
+      "game": "Detroit Tigers @ Toronto Blue Jays",
+      "market": "Run line",
+      "pick": "Detroit Tigers +1.5",
+      "model_prob": 0.6915,
+      "market_prob": 0.6253,
+      "edge_pp": 0.0662,
+      "n_bookmakers": 11
+    },
+    {
+      "game": "San Diego Padres @ Colorado Rockies",
+      "market": "Run line",
+      "pick": "Colorado Rockies +1.5",
+      "model_prob": 0.5144,
+      "market_prob": 0.4508,
+      "edge_pp": 0.0637,
+      "n_bookmakers": 11
+    },
+    {
+      "game": "San Diego Padres @ Colorado Rockies",
+      "market": "Moneyline",
+      "pick": "San Diego Padres ML",
+      "model_prob": 0.707,
+      "market_prob": 0.6444,
+      "edge_pp": 0.0626,
+      "n_bookmakers": 11
     }
   ]
 }

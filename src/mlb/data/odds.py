@@ -74,11 +74,90 @@ def fetch_historical_snapshot(timestamp: dt.datetime, markets: str = "h2h,spread
     resp.raise_for_status()
 
 
+def fetch_live_odds(markets: str = "h2h,spreads,totals", regions: str = "us") -> list[dict]:
+    """The CURRENT odds board for every upcoming MLB game (not a historical
+    snapshot) — a different, much cheaper endpoint (no `historical/` prefix,
+    no per-timestamp cost) meant for exactly this use: comparing today's
+    live predictions to today's actual live market. Returns the raw list of
+    games as given by the API (each with its own `bookmakers`), not wrapped
+    in the `{"data": [...]}` envelope the historical endpoint uses."""
+    global _last_remaining_credits
+    params = {"apiKey": _api_key(), "regions": regions, "markets": markets}
+    for attempt in range(3):
+        resp = requests.get(f"{BASE_URL}/sports/{SPORT_KEY}/odds", params=params, timeout=30)
+        if "x-requests-remaining" in resp.headers:
+            _last_remaining_credits = int(resp.headers["x-requests-remaining"])
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code in (401, 402, 403):
+            raise RuntimeError(f"Odds API auth/quota error {resp.status_code}: {resp.text}")
+        logger.warning("odds API transient error %s, attempt %d: %s", resp.status_code, attempt + 1, resp.text[:200])
+        time.sleep(2 * (attempt + 1))
+    resp.raise_for_status()
+
+
 def _devig_two_way(price_a: float, price_b: float) -> tuple[float, float]:
     """Decimal odds -> de-vigged (no-hold) implied probabilities."""
     p_a, p_b = 1.0 / price_a, 1.0 / price_b
     total = p_a + p_b
     return p_a / total, p_b / total
+
+
+def extract_live_game_odds(live_odds: list[dict], home_team: str, away_team: str) -> dict | None:
+    """Same de-vigged extraction as `extract_game_closing_odds`, for the
+    CURRENT live board instead of a historical snapshot — matched by team
+    names only (no timestamp tolerance needed; there's exactly one "right
+    now" board, not a series of snapshots to line up against a commence
+    time). Returns None if the game isn't found or no book has posted a
+    moneyline yet — never fabricates a line that wasn't actually quoted.
+    """
+    for g in live_odds:
+        if g.get("home_team") != home_team or g.get("away_team") != away_team:
+            continue
+
+        h2h_home, h2h_away, spread_home, spread_away, spread_point, total_over, total_under, total_point = ([] for _ in range(8))
+        books_seen = []
+        for bm in g.get("bookmakers", []):
+            books_seen.append(bm["key"])
+            for m in bm.get("markets", []):
+                outcomes = {o["name"]: o for o in m["outcomes"]}
+                if m["key"] == "h2h" and home_team in outcomes and away_team in outcomes:
+                    h2h_home.append(outcomes[home_team]["price"])
+                    h2h_away.append(outcomes[away_team]["price"])
+                elif m["key"] == "spreads" and home_team in outcomes and away_team in outcomes:
+                    spread_home.append(outcomes[home_team]["price"])
+                    spread_away.append(outcomes[away_team]["price"])
+                    spread_point.append(outcomes[home_team].get("point"))
+                elif m["key"] == "totals" and "Over" in outcomes and "Under" in outcomes:
+                    total_over.append(outcomes["Over"]["price"])
+                    total_under.append(outcomes["Under"]["price"])
+                    total_point.append(outcomes["Over"].get("point"))
+
+        if not h2h_home:
+            return None  # game found but no moneyline quoted yet — real absence, not an error
+
+        import statistics
+        ml_home_prob, ml_away_prob = _devig_two_way(statistics.median(h2h_home), statistics.median(h2h_away))
+        result = {
+            "home_team": home_team, "away_team": away_team,
+            "commence_time": g.get("commence_time"),
+            "n_bookmakers": len(books_seen), "bookmakers": ",".join(sorted(set(books_seen))),
+            "ml_home_implied_prob": ml_home_prob, "ml_away_implied_prob": ml_away_prob,
+            "source": SOURCE, "fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "is_closing": False, "is_real_data": True,
+        }
+        if spread_home:
+            rl_home_prob, rl_away_prob = _devig_two_way(statistics.median(spread_home), statistics.median(spread_away))
+            result["run_line_point"] = statistics.median([p for p in spread_point if p is not None]) if any(p is not None for p in spread_point) else None
+            result["run_line_home_cover_prob"] = rl_home_prob
+            result["run_line_away_cover_prob"] = rl_away_prob
+        if total_over:
+            over_prob, under_prob = _devig_two_way(statistics.median(total_over), statistics.median(total_under))
+            result["total_point"] = statistics.median([p for p in total_point if p is not None]) if any(p is not None for p in total_point) else None
+            result["total_over_prob"] = over_prob
+            result["total_under_prob"] = under_prob
+        return result
+    return None
 
 
 def extract_game_closing_odds(snapshot: dict, home_team: str, away_team: str, commence_time: dt.datetime, tolerance_minutes: int = 20) -> dict | None:

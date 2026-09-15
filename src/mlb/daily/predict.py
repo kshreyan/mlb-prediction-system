@@ -44,6 +44,7 @@ from mlb.features.build_dataset import build_game_features
 from mlb.lineups.projections import add_asof_batter_projections
 from mlb.lineups.lineup_offense import build_lineup_offense_features, compute_pa_weights_by_slot
 from mlb.lineups.live import fetch_slate_status
+from mlb.data.odds import fetch_live_odds, extract_live_game_odds
 from mlb.park_weather.park_factors import load_or_compute_park_factors
 from mlb.simulation.run_environment import build_long_training_frame, fit_run_environment
 from mlb.simulation.engine import simulate_game
@@ -60,6 +61,60 @@ def _person_throwing_hand(person_id: int) -> str | None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("could not look up throwing hand for person_id=%s: %s", person_id, exc)
         return None
+
+
+def _market_comparison_fields(sim, market: dict | None) -> dict:
+    """Compares the simulation's own probabilities to the real live market,
+    for run line and totals (moneyline is added later, once the shipped
+    ensemble probability — not the raw simulation — is known). Every value
+    is None when no real market line was found, rather than a guessed or
+    interpolated one.
+
+    Run line: MLB spreads are always ±1.5 (no push possible, since runs are
+    integers), so "home covers +1.5" and "home covers -1.5" are exact
+    complements of "away covers -1.5"/"away covers +1.5" respectively —
+    the sim's own margin distribution answers either framing exactly,
+    without needing a second, separately-fit run-line model. A market line
+    other than ±1.5 (rare, but real for a big mismatch) is left unavailable
+    rather than approximated.
+    """
+    out = {
+        "ml_market_home_prob": None, "ml_market_away_prob": None, "ml_n_bookmakers": None,
+        "run_line_market_point": None, "run_line_market_home_prob": None,
+        "run_line_model_home_prob": None, "run_line_edge_home": None,
+        "total_market_point": None, "total_market_over_prob": None,
+        "total_model_over_prob": None, "total_edge_over": None,
+        "n_bookmakers": None, "bookmakers": None,
+    }
+    if market is None:
+        return out
+
+    out["ml_market_home_prob"] = market.get("ml_home_implied_prob")
+    out["ml_market_away_prob"] = market.get("ml_away_implied_prob")
+    out["n_bookmakers"] = market.get("n_bookmakers")
+    out["bookmakers"] = market.get("bookmakers")
+
+    point = market.get("run_line_point")
+    if point is not None and abs(point) == 1.5:
+        model_home_prob = sim.home_minus_1_5_cover_prob if point < 0 else float(np.mean(sim.margin_distribution >= -1))
+        market_home_prob = market.get("run_line_home_cover_prob")
+        out["run_line_market_point"] = point
+        out["run_line_model_home_prob"] = model_home_prob
+        out["run_line_market_home_prob"] = market_home_prob
+        if market_home_prob is not None:
+            out["run_line_edge_home"] = model_home_prob - market_home_prob
+
+    total_line = market.get("total_point")
+    if total_line is not None:
+        model_over_prob = float(np.mean(sim.total_distribution > total_line))
+        market_over_prob = market.get("total_over_prob")
+        out["total_market_point"] = total_line
+        out["total_model_over_prob"] = model_over_prob
+        out["total_market_over_prob"] = market_over_prob
+        if market_over_prob is not None:
+            out["total_edge_over"] = model_over_prob - market_over_prob
+
+    return out
 
 
 def _recent_actual_lineup(lineups_hist: pd.DataFrame, team: str, before_date: pd.Timestamp) -> pd.DataFrame | None:
@@ -239,6 +294,18 @@ def build_todays_predictions(cfg: BacktestConfig, seasons: list[int], today: dt.
     long_train = build_long_training_frame(hist_all, feature_set="both")
     run_env_model = fit_run_environment(long_train, feature_set="both")
 
+    # Real, live market odds for today's slate (moneyline/run-line/totals),
+    # for an honest model-vs-market comparison — optional and best-effort:
+    # a missing key or a failed API call must never break the underlying
+    # predictions, so this degrades to "no market comparison" rather than
+    # raising. Never fabricates a market price that wasn't actually quoted.
+    live_odds = None
+    try:
+        live_odds = fetch_live_odds()
+        logger.info("live odds: %d upcoming games on the board", len(live_odds))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not fetch live odds (%s) — predictions will have no market comparison", exc)
+
     results = []
     for _, row in gf_today.iterrows():
         X_home = pd.DataFrame([{
@@ -261,6 +328,10 @@ def build_todays_predictions(cfg: BacktestConfig, seasons: list[int], today: dt.
         mu_a = run_env_model.predict_mu(X_away)[0]
         sim = simulate_game(mu_h, mu_a, run_env_model.dispersion_k, n_sims=20000, seed=int(row["game_pk"]) % (2**31))
         meta = next(m for m in game_meta if m["game_pk"] == row["game_pk"])
+
+        market = extract_live_game_odds(live_odds, meta["home_team"], meta["away_team"]) if live_odds else None
+        market_fields = _market_comparison_fields(sim, market)
+
         results.append({
             **meta, "mu_home": mu_h, "mu_away": mu_a,
             "sim_home_win_prob": sim.home_win_prob,
@@ -269,6 +340,7 @@ def build_todays_predictions(cfg: BacktestConfig, seasons: list[int], today: dt.
             "pred_mean_total": sim.mean_total, "pred_median_total": sim.median_total,
             "weather_available": False,
             "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            **market_fields,
         })
 
     out = pd.DataFrame(results)
@@ -321,5 +393,12 @@ def build_todays_predictions(cfg: BacktestConfig, seasons: list[int], today: dt.
     else:
         out["ensemble_home_win_prob"] = out["sim_home_win_prob"]
         logger.warning("No historical ensemble frame found (%s); using simulation-only probability.", ens_hist_path)
+
+    # Moneyline edge vs. the real live market, using the FINAL shipped
+    # ensemble probability (not the raw simulation) — computed here, once
+    # the ensemble is known, rather than inside the per-game loop above.
+    has_market = out["ml_market_home_prob"].notna()
+    out["ml_edge_home"] = np.where(has_market, out["ensemble_home_win_prob"] - out["ml_market_home_prob"], np.nan)
+    out["ml_edge_away"] = np.where(has_market, (1 - out["ensemble_home_win_prob"]) - out["ml_market_away_prob"], np.nan)
 
     return out
